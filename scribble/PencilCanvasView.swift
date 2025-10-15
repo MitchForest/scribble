@@ -4,6 +4,7 @@ import PencilKit
 struct PencilCanvasView: UIViewRepresentable {
     @Binding var drawing: PKDrawing
     var onDrawingChanged: (PKDrawing) -> Void
+    var allowFingerFallback: Bool = true
 
     func makeUIView(context: Context) -> PKCanvasView {
         let view = PKCanvasView()
@@ -12,7 +13,11 @@ struct PencilCanvasView: UIViewRepresentable {
         view.backgroundColor = .clear
         view.alwaysBounceVertical = false
         view.alwaysBounceHorizontal = false
-        view.allowsFingerDrawing = false
+        if #available(iOS 14.0, *) {
+            view.drawingPolicy = allowFingerFallback ? .anyInput : .pencilOnly
+        } else {
+            view.allowsFingerDrawing = allowFingerFallback
+        }
         view.tool = PKInkingTool(.pen, color: .label, width: 6)
         return view
     }

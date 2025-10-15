@@ -31,6 +31,7 @@ struct PracticeSessionView: View {
     @State private var hintUsed = false
     @State private var startedAt = Date()
     @State private var unlockMessage: String?
+    @State private var animationToken: Int = 0
 
     private var isLeftHanded: Bool {
         dataStore.settings.isLeftHanded
@@ -60,9 +61,9 @@ struct PracticeSessionView: View {
                                                 progress: strokeProgress,
                                                 mode: mode)
 
-                            PencilCanvasView(drawing: $drawing) { updated in
+                            PencilCanvasView(drawing: $drawing, onDrawingChanged: { updated in
                                 processDrawingChange(updated, scaledTemplate: scaled)
-                            }
+                            }, allowFingerFallback: true)
                             .allowsHitTesting(mode != .trace || strokeProgress.last ?? 0 >= 1)
 
                             if let warningMessage {
@@ -269,6 +270,7 @@ struct PracticeSessionView: View {
         unlockMessage = nil
         strokeProgress = Array(repeating: 0, count: scaledTemplate?.strokes.count ?? 0)
         startedAt = Date()
+        animationToken += 1
         startAnimationIfNeeded()
     }
 
@@ -278,17 +280,18 @@ struct PracticeSessionView: View {
 
     private func startAnimationIfNeeded() {
         guard let scaledTemplate else { return }
+        animationToken += 1
         strokeProgress = Array(repeating: 0, count: scaledTemplate.strokes.count)
 
         switch mode {
         case .trace:
-            animateStrokesSequentially()
+            animateStrokesSequentially(token: animationToken)
         case .ghost, .memory:
             break
         }
     }
 
-    private func animateStrokesSequentially() {
+    private func animateStrokesSequentially(token: Int) {
         guard let scaledTemplate else { return }
         let baseDelay = 0.2
         let durationPerStroke = 1.0
@@ -296,21 +299,33 @@ struct PracticeSessionView: View {
         for index in scaledTemplate.strokes.indices {
             let delay = baseDelay + (Double(index) * (durationPerStroke + 0.2))
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                guard token == animationToken else { return }
                 withAnimation(.linear(duration: durationPerStroke)) {
                     strokeProgress[index] = 1.0
                 }
+            }
+        }
+
+        let totalDuration = baseDelay + Double(scaledTemplate.strokes.count) * (durationPerStroke + 0.2)
+        DispatchQueue.main.asyncAfter(deadline: .now() + totalDuration) {
+            guard token == animationToken else { return }
+            if drawing.strokes.isEmpty && mode == .trace {
+                animateStrokesSequentially(token: token)
             }
         }
     }
 
     private func playHintAnimation() {
         guard let scaledTemplate else { return }
+        animationToken += 1
+        let token = animationToken
         strokeProgress = Array(repeating: 0, count: scaledTemplate.strokes.count)
 
         let durationPerStroke = 0.8
         for index in scaledTemplate.strokes.indices {
             let delay = Double(index) * (durationPerStroke + 0.1)
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                guard token == animationToken else { return }
                 withAnimation(.linear(duration: durationPerStroke)) {
                     strokeProgress[index] = 1.0
                 }
@@ -335,6 +350,7 @@ struct PracticeSessionView: View {
                 previousStrokeCount = reverted.strokes.count
                 return
             }
+            animationToken += 1
             lastWarning = nil
         }
 
