@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-200 -1496.0 1600 2378.0" width="800" height="600" stroke-linecap="round" stroke-linejoin="round">
+  <style>
+    .guide { stroke-width: 4; opacity: 0.35; fill: none; }
+    .guide.mid { stroke-dasharray: 24 14; opacity: 0.5; }
+    .stroke { fill: none; stroke-width: 24; stroke-linecap: round; stroke-linejoin: round; }
+  </style>
+  <line class="guide" x1="-200" y1="0" x2="1400" y2="0" stroke="#2F3A56"/>
+  <line class="guide mid" x1="-200" y1="-614.0" x2="1400" y2="-614.0" stroke="#457B9D"/>
+  <line class="guide" x1="-200" y1="-1296.0" x2="1400" y2="-1296.0" stroke="#2F3A56"/>
+  <line class="guide" x1="-200" y1="682.0" x2="1400" y2="682.0" stroke="#ADB5BD" stroke-width="2"/>
+  <path class="stroke" d="M 34.387,-35.045 C 52.209,-11.531 77.101,-0.000 110.080,-0.000 C 187.000,-0.000 209.981,-63.197 222.000,-131.000 L 428.000,-1296.000" stroke="#FF6B6B" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1">
+    <animate attributeName="stroke-dashoffset" values="1;0" dur="1.20s" begin="0.00s" fill="freeze"/>
+  </path>
+  <path class="stroke" d="M 428.000,-1296.000 C 443.321,-1250.566 865.929,2.900 866.909,-0.000" stroke="#4ECDC4" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1">
+    <animate attributeName="stroke-dashoffset" values="1;0" dur="1.20s" begin="1.35s" fill="freeze"/>
+  </path>
+  <path class="stroke" d="M 866.909,-0.000 C 874.000,-15.000 1305.756,-1296.000 1305.756,-1296.000" stroke="#45B7D1" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1">
+    <animate attributeName="stroke-dashoffset" values="1;0" dur="1.20s" begin="2.70s" fill="freeze"/>
+  </path>
+  <path class="stroke" d="M 1305.760,-1296.000 C 1305.791,-1296.093 1432.084,-586.000 1511.011,-136.800 C 1522.900,-69.134 1542.740,-0.004 1623.391,-0.004 C 1656.145,-0.004 1680.376,-11.686 1698.084,-35.049" stroke="#96CEB4" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1">
+    <animate attributeName="stroke-dashoffset" values="1;0" dur="1.20s" begin="4.05s" fill="freeze"/>
+  </path>
+</svg>

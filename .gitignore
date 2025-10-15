@@ -1,0 +1,44 @@
+# Xcode / Swift
+DerivedData/
+*.xcworkspace/xcuserdata/
+*.xcworkspace/xcshareddata/WorkspaceSettings.xcsettings
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+
+# Swift Package Manager
+.build/
+Packages/
+Package.resolved
+
+# CocoaPods
+Pods/
+
+# Carthage
+Carthage/Build/
+
+# Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output/
+
+# Output / Archives
+*.ipa
+*.dSYM.zip
+*.dSYM
+*.xcarchive
+
+# Logs & Misc
+*.log
+.DS_Store
+*.swp
+*.swo
+
+# Tooling
+.env
+xcuserdata/
+
+# Generated diagnostics / profiling
+*.xccheckout
+*.xcscmblueprint
+

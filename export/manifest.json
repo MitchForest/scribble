@@ -1,0 +1,75 @@
+{
+  "version": "2025.10.15",
+  "fontProvenance": {
+    "family": "Learning Curve",
+    "foundry": "BVFonts",
+    "license": "embedded-app",
+    "notes": "Licensed for educational app use"
+  },
+  "sets": [
+    {
+      "name": "alpha-lower",
+      "description": "Lowercase letters",
+      "glyphs": [
+        "a.lower",
+        "b.lower",
+        "c.lower",
+        "d.lower",
+        "e.lower",
+        "f.lower",
+        "g.lower",
+        "h.lower",
+        "i.lower",
+        "j.lower",
+        "k.lower",
+        "l.lower",
+        "m.lower",
+        "n.lower",
+        "o.lower",
+        "p.lower",
+        "q.lower",
+        "r.lower",
+        "s.lower",
+        "t.lower",
+        "u.lower",
+        "v.lower",
+        "w.lower",
+        "x.lower",
+        "y.lower",
+        "z.lower"
+      ]
+    },
+    {
+      "name": "alpha-upper",
+      "description": "Uppercase letters",
+      "glyphs": [
+        "A.upper",
+        "B.upper",
+        "C.upper",
+        "D.upper",
+        "E.upper",
+        "F.upper",
+        "G.upper",
+        "H.upper",
+        "I.upper",
+        "J.upper",
+        "K.upper",
+        "L.upper",
+        "M.upper",
+        "N.upper",
+        "O.upper",
+        "P.upper",
+        "Q.upper",
+        "R.upper",
+        "S.upper",
+        "T.upper",
+        "U.upper",
+        "V.upper",
+        "W.upper",
+        "X.upper",
+        "Y.upper",
+        "Z.upper"
+      ]
+    }
+  ]
+}
