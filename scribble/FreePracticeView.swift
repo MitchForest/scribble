@@ -3,9 +3,16 @@ import PencilKit
 
 struct FreePracticeView: View {
     @EnvironmentObject private var dataStore: PracticeDataStore
-    @StateObject private var viewModel = FreePracticeViewModel()
-    @State private var animationToken = 0
-    @State private var showProfileSheet = false
+    private let catalog: [PracticeCategory]
+
+    @State private var expandedCategoryID: PracticeCategory.ID?
+    @State private var selectedCategory: PracticeCategory
+    @State private var selectedLesson: PracticeLesson
+
+    @StateObject private var topViewModel: FreePracticeViewModel
+    @StateObject private var bottomViewModel: FreePracticeViewModel
+    @State private var topAnimationToken = 0
+    @State private var bottomAnimationToken = 0
 
     private var difficultyMultiplier: Double {
         switch dataStore.settings.difficulty {
@@ -17,53 +24,86 @@ struct FreePracticeView: View {
 
     private let secondsPerLetter: Int = 5
 
+    private var activeTopLine: PracticeLessonLine {
+        selectedLesson.lines.first ?? PracticeCatalog.fallbackLine
+    }
+
+    private var activeBottomLine: PracticeLessonLine {
+        selectedLesson.lines.dropFirst().first ?? PracticeCatalog.fallbackLine
+    }
+
+    init() {
+        let categories = PracticeCatalog.defaultCategories.isEmpty
+            ? [PracticeCatalog.fallbackCategory]
+            : PracticeCatalog.defaultCategories
+        self.catalog = categories
+
+        let category = categories.first ?? PracticeCatalog.fallbackCategory
+        let lesson = category.lessons.first ?? PracticeCatalog.fallbackLesson
+        let topLine = lesson.lines.first ?? PracticeCatalog.fallbackLine
+        let bottomLine = lesson.lines.dropFirst().first ?? PracticeCatalog.fallbackLine
+
+        _selectedCategory = State(initialValue: category)
+        _selectedLesson = State(initialValue: lesson)
+        _expandedCategoryID = State(initialValue: category.id)
+        _topViewModel = StateObject(wrappedValue: FreePracticeViewModel(initialText: topLine.text))
+        _bottomViewModel = StateObject(wrappedValue: FreePracticeViewModel(initialText: bottomLine.text))
+    }
+
     var body: some View {
         let today = dataStore.todayContribution()
         let guidesEnabled = dataStore.settings.difficulty.profile.showsGuides
 
         ZStack {
             PracticeBackground()
-            VStack(spacing: 24) {
-                PracticeTopBar(progress: dataStore.dailyProgressRatio(),
-                               today: today,
-                               goal: dataStore.profile.goal,
-                               seed: dataStore.profile.avatarSeed,
-                               difficulty: dataStore.settings.difficulty,
-                               streak: dataStore.currentStreak(),
-                               onDifficultyChange: { dataStore.updateDifficulty($0) },
-                               onOpenProfile: { showProfileSheet = true })
-                    .padding(.horizontal, 28)
-                    .padding(.top, 28)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 28) {
+                    PracticeTopBar(progress: dataStore.dailyProgressRatio(),
+                                   today: today,
+                                   goal: dataStore.profile.goal,
+                                   seed: dataStore.profile.avatarSeed,
+                                   difficulty: dataStore.settings.difficulty,
+                                   streak: dataStore.currentStreak(),
+                                   onDifficultyChange: { dataStore.updateDifficulty($0) })
 
-                GeometryReader { proxy in
-                    VStack(spacing: 26) {
-                        PresetChips(viewModel: viewModel)
-                PracticeBoard(viewModel: viewModel,
-                                  settings: dataStore.settings,
-                                  guidesEnabled: guidesEnabled,
-                                  animationToken: animationToken,
-                                  awardLetterTime: awardLetterTime,
-                                  registerWarning: { viewModel.markWarningForCurrentLetter() })
-                            .frame(maxHeight: .infinity)
+                    lessonPicker
+
+                    Text(selectedLesson.title)
+                        .font(.system(size: 26, weight: .bold, design: .rounded))
+                        .foregroundColor(Color(red: 0.3, green: 0.42, blue: 0.63))
+
+                    VStack(spacing: 38) {
+                        practiceLineSection(line: activeTopLine,
+                                            viewModel: topViewModel,
+                                            animationToken: $topAnimationToken,
+                                            guidesEnabled: guidesEnabled)
+
+                        practiceLineSection(line: activeBottomLine,
+                                            viewModel: bottomViewModel,
+                                            animationToken: $bottomAnimationToken,
+                                            guidesEnabled: guidesEnabled)
                     }
-                    .padding(.horizontal, 28)
-                    .padding(.bottom, 40)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 }
+                .padding(.horizontal, 28)
+                .padding(.top, 28)
+                .padding(.bottom, 44)
             }
         }
         .onAppear {
-            viewModel.resumeIfNeeded()
+            topViewModel.resumeIfNeeded()
+            bottomViewModel.resumeIfNeeded()
         }
-        .onChange(of: viewModel.currentLetterIndex) {
-            animationToken &+= 1
+        .onChange(of: topViewModel.currentLetterIndex) { _ in
+            topAnimationToken &+= 1
         }
-        .onChange(of: viewModel.targetText) {
-            animationToken &+= 1
+        .onChange(of: topViewModel.targetText) { _ in
+            topAnimationToken &+= 1
         }
-        .sheet(isPresented: $showProfileSheet) {
-            ProfileCenterView()
-                .environmentObject(dataStore)
+        .onChange(of: bottomViewModel.currentLetterIndex) { _ in
+            bottomAnimationToken &+= 1
+        }
+        .onChange(of: bottomViewModel.targetText) { _ in
+            bottomAnimationToken &+= 1
         }
     }
 
@@ -75,6 +115,127 @@ struct FreePracticeView: View {
                                     letterId: letterId)
     }
 
+    @ViewBuilder
+    private var lessonPicker: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            ForEach(catalog) { category in
+                VStack(alignment: .leading, spacing: 12) {
+                    Button {
+                        toggleCategory(category)
+                    } label: {
+                        HStack {
+                            Text(category.title)
+                                .font(.system(size: 24, weight: .bold, design: .rounded))
+                                .foregroundColor(category.id == selectedCategory.id
+                                                 ? Color(red: 0.32, green: 0.42, blue: 0.6)
+                                                 : Color(red: 0.38, green: 0.48, blue: 0.68))
+                            Spacer()
+                            Image(systemName: expandedCategoryID == category.id ? "chevron.up" : "chevron.down")
+                                .foregroundColor(Color(red: 0.48, green: 0.58, blue: 0.78))
+                        }
+                        .padding(.vertical, 16)
+                        .padding(.horizontal, 20)
+                        .background(
+                            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                                .fill(category.id == selectedCategory.id
+                                      ? Color.white.opacity(0.96)
+                                      : Color.white.opacity(0.82))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                                .stroke(Color.white.opacity(0.45), lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    if expandedCategoryID == category.id {
+                        VStack(alignment: .leading, spacing: 10) {
+                            ForEach(category.lessons) { lesson in
+                                Button {
+                                    selectLesson(lesson, in: category)
+                                } label: {
+                                    HStack {
+                                        Text(lesson.title)
+                                            .font(.system(size: 18, weight: .semibold, design: .rounded))
+                                            .foregroundColor(lesson.id == selectedLesson.id
+                                                             ? Color(red: 0.32, green: 0.42, blue: 0.6)
+                                                             : Color(red: 0.47, green: 0.55, blue: 0.72))
+                                        Spacer()
+                                        if lesson.id == selectedLesson.id {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .foregroundColor(Color(red: 1.0, green: 0.7, blue: 0.36))
+                                                .imageScale(.medium)
+                                        }
+                                    }
+                                    .padding(.vertical, 12)
+                                    .padding(.horizontal, 16)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                            .fill(lesson.id == selectedLesson.id
+                                                  ? Color.white.opacity(0.96)
+                                                  : Color.white.opacity(0.7))
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.leading, 12)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func practiceLineSection(line: PracticeLessonLine,
+                                     viewModel: FreePracticeViewModel,
+                                     animationToken: Binding<Int>,
+                                     guidesEnabled: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(line.title)
+                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .foregroundColor(Color(red: 0.28, green: 0.4, blue: 0.62))
+
+            PracticeBoard(viewModel: viewModel,
+                          settings: dataStore.settings,
+                          guidesEnabled: guidesEnabled,
+                          animationToken: animationToken,
+                          awardLetterTime: awardLetterTime,
+                          registerWarning: { viewModel.markWarningForCurrentLetter() })
+                .frame(maxHeight: .infinity)
+        }
+    }
+
+    private func toggleCategory(_ category: PracticeCategory) {
+        if expandedCategoryID == category.id {
+            expandedCategoryID = nil
+        } else {
+            expandedCategoryID = category.id
+            if selectedCategory.id != category.id {
+                selectLesson(category.lessons.first ?? PracticeCatalog.fallbackLesson, in: category)
+            }
+        }
+    }
+
+    private func selectLesson(_ lesson: PracticeLesson, in category: PracticeCategory) {
+        selectedCategory = category
+        selectedLesson = lesson
+        expandedCategoryID = category.id
+        applyLesson(lesson)
+    }
+
+    private func applyLesson(_ lesson: PracticeLesson) {
+        let topLine = lesson.lines.first ?? PracticeCatalog.fallbackLine
+        let bottomLine = lesson.lines.dropFirst().first ?? PracticeCatalog.fallbackLine
+
+        topViewModel.targetText = topLine.text
+        bottomViewModel.targetText = bottomLine.text
+        topViewModel.resumeIfNeeded()
+        bottomViewModel.resumeIfNeeded()
+        topAnimationToken &+= 1
+        bottomAnimationToken &+= 1
+    }
 }
 
 private struct PracticeBackground: View {
@@ -99,7 +260,6 @@ private struct PracticeTopBar: View {
     let difficulty: PracticeDifficulty
     let streak: Int
     let onDifficultyChange: (PracticeDifficulty) -> Void
-    let onOpenProfile: () -> Void
 
     private var statusLine: String {
         guard goal.dailySeconds > 0 else { return "Set a goal to start filling your ring." }
@@ -137,46 +297,83 @@ private struct PracticeTopBar: View {
                               goal: goal,
                               difficulty: difficulty,
                               streak: streak,
-                              onDifficultyChange: onDifficultyChange,
-                              onOpenProfile: onOpenProfile)
+                              onDifficultyChange: onDifficultyChange)
         }
     }
 }
 
-// MARK: - Top Controls
+// MARK: - Lesson Catalog
 
-private struct PresetChips: View {
-    @ObservedObject var viewModel: FreePracticeViewModel
+private struct PracticeLessonLine: Identifiable, Equatable {
+    let id = UUID()
+    let title: String
+    let text: String
+}
 
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 12) {
-                ForEach(viewModel.presets) { preset in
-                    Button {
-                        viewModel.selectPreset(preset)
-                    } label: {
-                        Text(preset.title)
-                            .font(.subheadline.weight(.semibold))
-                            .padding(.vertical, 8)
-                            .padding(.horizontal, 14)
-                            .background(
-                                Capsule()
-                                    .fill(viewModel.targetText == preset.text
-                                          ? Color(red: 1.0, green: 0.86, blue: 0.42)
-                                          : Color.white.opacity(0.9))
-                            )
-                            .overlay(
-                                Capsule()
-                                    .stroke(Color.white.opacity(0.65), lineWidth: 1)
-                            )
-                            .foregroundStyle(Color(red: 0.32, green: 0.42, blue: 0.6))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 4)
-        }
-    }
+private struct PracticeLesson: Identifiable, Equatable {
+    let id = UUID()
+    let title: String
+    let lines: [PracticeLessonLine]
+}
+
+private struct PracticeCategory: Identifiable, Equatable {
+    let id = UUID()
+    let title: String
+    let lessons: [PracticeLesson]
+}
+
+private enum PracticeCatalog {
+    static let fallbackLine = PracticeLessonLine(title: "Practice", text: "a a a a a")
+    static let fallbackLesson = PracticeLesson(title: "Starter", lines: [
+        PracticeLessonLine(title: "Uppercase A", text: "A A A A A"),
+        PracticeLessonLine(title: "Lowercase a", text: "a a a a a")
+    ])
+    static let fallbackCategory = PracticeCategory(title: "Letters", lessons: [fallbackLesson])
+
+    static let defaultCategories: [PracticeCategory] = [
+        PracticeCategory(title: "Letters", lessons: [
+            PracticeLesson(title: "Letter A", lines: [
+                PracticeLessonLine(title: "Uppercase A", text: "A A A A A"),
+                PracticeLessonLine(title: "Lowercase a", text: "a a a a a")
+            ]),
+            PracticeLesson(title: "Letter B", lines: [
+                PracticeLessonLine(title: "Uppercase B", text: "B B B B B"),
+                PracticeLessonLine(title: "Lowercase b", text: "b b b b b")
+            ]),
+            PracticeLesson(title: "Letter C", lines: [
+                PracticeLessonLine(title: "Uppercase C", text: "C C C C C"),
+                PracticeLessonLine(title: "Lowercase c", text: "c c c c c")
+            ])
+        ]),
+        PracticeCategory(title: "Alphabet", lessons: [
+            PracticeLesson(title: "A – E", lines: [
+                PracticeLessonLine(title: "Uppercase Set", text: "A B C D E"),
+                PracticeLessonLine(title: "Lowercase Set", text: "a b c d e")
+            ]),
+            PracticeLesson(title: "F – J", lines: [
+                PracticeLessonLine(title: "Uppercase Set", text: "F G H I J"),
+                PracticeLessonLine(title: "Lowercase Set", text: "f g h i j")
+            ]),
+            PracticeLesson(title: "K – O", lines: [
+                PracticeLessonLine(title: "Uppercase Set", text: "K L M N O"),
+                PracticeLessonLine(title: "Lowercase Set", text: "k l m n o")
+            ])
+        ]),
+        PracticeCategory(title: "Sentences", lessons: [
+            PracticeLesson(title: "Morning Cheer", lines: [
+                PracticeLessonLine(title: "Line 1", text: "Rise and glow with joy"),
+                PracticeLessonLine(title: "Line 2", text: "Take a breath and begin")
+            ]),
+            PracticeLesson(title: "Kind Wishes", lines: [
+                PracticeLessonLine(title: "Line 1", text: "Share a smile with a friend"),
+                PracticeLessonLine(title: "Line 2", text: "Write a note to brighten days")
+            ]),
+            PracticeLesson(title: "Little Adventure", lines: [
+                PracticeLessonLine(title: "Line 1", text: "Pack a snack for the trail"),
+                PracticeLessonLine(title: "Line 2", text: "Follow the sun over hills")
+            ])
+        ])
+    ]
 }
 
 private enum LetterStatus {
@@ -205,11 +402,10 @@ private struct PracticeBoard: View {
     @ObservedObject var viewModel: FreePracticeViewModel
     let settings: UserSettings
     let guidesEnabled: Bool
-    let animationToken: Int
+    @Binding var animationToken: Int
     let awardLetterTime: (LetterTimelineItem) -> Void
     let registerWarning: () -> Void
 
-    @State private var layoutKey: String = ""
     @State private var feedback: FeedbackMessage?
 
     private let positiveMessages = ["Great job!", "Awesome!", "Nice stroke!", "Super work!", "You got it!"]
@@ -229,7 +425,19 @@ private struct PracticeBoard: View {
                                       currentIndex: viewModel.currentLetterIndex,
                                       animationToken: animationToken,
                                       letterStates: viewModel.letterStates,
-                                      onSelect: { viewModel.jump(to: $0) })
+                                      onTap: { index, segment in
+                                          guard segment.isPractiseable else { return }
+                                          if index > viewModel.currentLetterIndex {
+                                              return
+                                          }
+                                          feedback = nil
+                                          if index == viewModel.currentLetterIndex {
+                                              animationToken &+= 1
+                                          } else {
+                                              viewModel.replay(at: index)
+                                              animationToken &+= 1
+                                          }
+                                      })
 
                     LetterPracticeCanvas(layout: layout,
                                          metrics: metrics,
@@ -248,24 +456,26 @@ private struct PracticeBoard: View {
                                              viewModel.markLetterCompleted()
                                              viewModel.advanceToNextPractiseableLetter()
                                          },
-                                         onSuccessFeedback: { showSuccessFeedback() },
-                                         onRetryFeedback: { showRetryFeedback() })
+                                        onSuccessFeedback: { showSuccessFeedback() },
+                                        onRetryFeedback: { showRetryFeedback() })
 
                 }
-                .onChange(of: viewModel.targetText) {
-                    layoutKey = ""
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .onChange(of: viewModel.targetText) { _ in
                     feedback = nil
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
                 if let bubble = feedback,
                    let segment = layout.segments[safe: viewModel.currentLetterIndex] {
+                    let referenceTop = layout.ascender - layout.scaledXHeight
+                    let letterTop = segment.strokeBounds?.minY ?? referenceTop
+                    let bubbleY = max(letterTop - 42, 16)
                     FeedbackBubbleView(message: bubble)
-                        .position(x: segment.frame.midX,
-                                  y: max(segment.frame.minY - 28, 0))
+                        .position(x: segment.frame.midX, y: bubbleY)
                 }
             }
         }
+        .frame(minHeight: 260)
     }
 
     private func strokePreference(for difficulty: PracticeDifficulty) -> StrokeSizePreference {
@@ -304,7 +514,7 @@ private struct ReferenceLineView: View {
     let currentIndex: Int
     let animationToken: Int
     let letterStates: [LetterState]
-    let onSelect: (Int) -> Void
+    let onTap: (Int, WordLayout.Segment) -> Void
 
     @State private var strokeProgress: [CGFloat] = []
 
@@ -314,13 +524,7 @@ private struct ReferenceLineView: View {
                 let statusColor = status(for: index).fillColor
                 let dotY = layout.ascender + 14
 
-                if segment.strokes.isEmpty {
-                    Text("space")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(statusColor.opacity(0.6))
-                        .position(x: segment.frame.midX,
-                                  y: dotY + 6)
-                } else {
+                if !segment.strokes.isEmpty {
                     let color = referenceColor(for: index)
                     ForEach(Array(segment.strokes.enumerated()), id: \.element.id) { strokeIndex, stroke in
                         stroke.path
@@ -343,9 +547,11 @@ private struct ReferenceLineView: View {
                     .frame(width: max(segment.frame.width, 32),
                            height: layout.ascender + layout.descender + 24)
                     .position(x: segment.frame.midX,
-                              y: (layout.ascender + layout.descender + 24) / 2)
+                             y: (layout.ascender + layout.descender + 24) / 2)
                     .contentShape(Rectangle())
-                    .onTapGesture { onSelect(index) }
+                    .onTapGesture {
+                        onTap(index, segment)
+                    }
             }
         }
         .frame(height: layout.height + 12)
@@ -424,7 +630,6 @@ private struct LetterPracticeCanvas: View {
     let guidesEnabled: Bool
     let difficulty: PracticeDifficulty
     let hapticsEnabled: Bool
-    let resetSignal: Int
     let onWarning: () -> Void
     let onStrokeValidated: (Int, Int) -> Void
     let onLetterComplete: () -> Void
@@ -460,6 +665,28 @@ private struct LetterPracticeCanvas: View {
 
     private var expectedStrokeCount: Int {
         currentSegment?.strokes.count ?? 0
+    }
+
+    private var deviationSlack: CGFloat {
+        switch difficulty {
+        case .beginner: return 0.12
+        case .intermediate: return 0.08
+        case .expert: return 0.05
+        }
+    }
+
+    private var maxOutsideRatio: CGFloat {
+        switch difficulty {
+        case .beginner: return 0.32
+        case .intermediate: return 0.26
+        case .expert: return 0.18
+        }
+    }
+
+    private var mergeCoverageCorridor: CGFloat {
+        let inkWidth = metrics.userInkWidth
+        let guideWidth = metrics.practiceLineWidth
+        return max(inkWidth * 1.05, guideWidth * 0.7, 10)
     }
 
     var body: some View {
@@ -523,11 +750,6 @@ private struct LetterPracticeCanvas: View {
                 currentStrokeIndex = 0
             }
         }
-        .onChange(of: resetSignal) {
-            DispatchQueue.main.async {
-                resetCurrentLetter()
-            }
-        }
     }
 
     private func resetCanvas() {
@@ -536,14 +758,6 @@ private struct LetterPracticeCanvas: View {
         warningMessage = nil
         previousStrokeCount = 0
         currentStrokeIndex = 0
-        lastWarningTime = nil
-    }
-
-    private func resetCurrentLetter() {
-        drawing = PKDrawing()
-        previousStrokeCount = 0
-        currentStrokeIndex = 0
-        warningMessage = nil
         lastWarningTime = nil
     }
 
@@ -574,7 +788,8 @@ private struct LetterPracticeCanvas: View {
                 return
             }
 
-            currentStrokeIndex = min(strokeIndex + 1, segment.strokes.count)
+            currentStrokeIndex = min(segment.strokes.count,
+                                     max(currentStrokeIndex, strokeIndex + 1))
             onStrokeValidated(strokeIndex, segment.strokes.count)
             onSuccessFeedback()
             if hapticsEnabled {
@@ -616,25 +831,36 @@ private struct LetterPracticeCanvas: View {
 
         let corridor = metrics.corridorRadius(for: difficulty)
         let softLimit = metrics.corridorSoftLimit(for: difficulty)
+        let hardLimit = softLimit + max(12, corridor * 0.6)
 
         var outside = 0
-        var samples = 0
+        var softBreaches = 0
 
         for point in userPoints {
             let distance = nearestDistance(for: point,
                                            templateStroke: templateStroke,
                                            corridor: corridor)
-            if distance > softLimit {
+            if distance > hardLimit {
                 return false
+            }
+            if distance > softLimit {
+                softBreaches += 1
+                outside += 1
+                continue
             }
             if distance > corridor {
                 outside += 1
             }
-            samples += 1
+        }
+
+        let samples = userPoints.count
+        let allowedSoftBreaches = max(2, Int(round(CGFloat(samples) * deviationSlack)))
+        if softBreaches > allowedSoftBreaches {
+            return false
         }
 
         let outsideRatio = samples > 0 ? CGFloat(outside) / CGFloat(samples) : 0
-        return outsideRatio <= 0.45
+        return outsideRatio <= maxOutsideRatio
     }
 
     private func nearestDistance(for point: CGPoint,
@@ -653,43 +879,121 @@ private struct LetterPracticeCanvas: View {
         return nearest
     }
 
-    private func coverageRatio(for strokes: [PKStroke], templateStrokes: [ScaledStroke]) -> Double {
-        let comparisons = min(templateStrokes.count, strokes.count)
-        guard comparisons > 0 else { return 0 }
-
-        var inside: CGFloat = 0
-        var outside: CGFloat = 0
-
-        for index in 0..<comparisons {
-            let expectedStroke = templateStrokes[index]
-            let userPoints = strokes[index].sampledPoints(step: 4)
-            if userPoints.isEmpty { continue }
-            for point in userPoints {
-                let distance = nearestDistance(for: point,
-                                               templateStroke: expectedStroke,
-                                               corridor: metrics.corridorRadius(for: difficulty))
-                if distance <= metrics.corridorRadius(for: difficulty) {
-                    inside += 1
-                } else {
-                    outside += 1
+    private func nearestDistanceToTemplate(_ point: CGPoint,
+                                           templateStrokes: [ScaledStroke],
+                                           corridor: CGFloat) -> CGFloat {
+        var nearest = CGFloat.greatestFiniteMagnitude
+        for stroke in templateStrokes {
+            let distance = nearestDistance(for: point,
+                                           templateStroke: stroke,
+                                           corridor: corridor)
+            if distance < nearest {
+                nearest = distance
+                if nearest < corridor * 0.2 {
+                    break
                 }
             }
         }
-
-        let total = inside + outside
-        guard total > 0 else { return 0 }
-        return Double(inside / total)
+        return nearest
     }
 
-    private func shouldCompleteLetter(strokes: [PKStroke], templateStrokes: [ScaledStroke]) -> Bool {
-        if strokes.count >= templateStrokes.count {
+    private func nearestDistanceToUser(_ point: CGPoint,
+                                       userPoints: [CGPoint],
+                                       corridor: CGFloat) -> CGFloat {
+        var nearest = CGFloat.greatestFiniteMagnitude
+        for userPoint in userPoints {
+            let distance = hypot(point.x - userPoint.x, point.y - userPoint.y)
+            if distance < nearest {
+                nearest = distance
+                if nearest < corridor * 0.2 {
+                    break
+                }
+            }
+        }
+        return nearest
+    }
+
+    private func coverageRatio(for strokes: [PKStroke],
+                               templateStrokes: [ScaledStroke],
+                               corridor: CGFloat,
+                               perStroke: inout [Double]) -> Double {
+        guard !strokes.isEmpty, !templateStrokes.isEmpty, corridor > 0 else { return 0 }
+
+        let userSamples = strokes.flatMap { $0.sampledPoints(step: 3) }
+        guard !userSamples.isEmpty else { return 0 }
+
+        let templateSamples = templateStrokes.flatMap(\.sampledPoints)
+        guard !templateSamples.isEmpty else { return 0 }
+
+        var userInside = 0
+        for point in userSamples {
+            let distance = nearestDistanceToTemplate(point,
+                                                     templateStrokes: templateStrokes,
+                                                     corridor: corridor)
+            if distance <= corridor {
+                userInside += 1
+            }
+        }
+        let userCoverage = Double(userInside) / Double(userSamples.count)
+
+        perStroke = templateStrokes.map { stroke in
+            let points = stroke.sampledPoints
+            guard !points.isEmpty else { return 1 }
+            var inside = 0
+            for point in points {
+                let distance = nearestDistanceToUser(point,
+                                                     userPoints: userSamples,
+                                                     corridor: corridor)
+                if distance <= corridor {
+                    inside += 1
+                }
+            }
+            return Double(inside) / Double(points.count)
+        }
+
+        var templateInside = 0
+        for point in templateSamples {
+            let distance = nearestDistanceToUser(point,
+                                                 userPoints: userSamples,
+                                                 corridor: corridor)
+            if distance <= corridor {
+                templateInside += 1
+            }
+        }
+        let templateCoverage = Double(templateInside) / Double(templateSamples.count)
+
+        return min(userCoverage, templateCoverage)
+    }
+
+    private func shouldCompleteLetter(strokes: [PKStroke],
+                                      templateStrokes: [ScaledStroke]) -> Bool {
+        guard !templateStrokes.isEmpty else { return false }
+
+        if currentStrokeIndex >= templateStrokes.count {
             return true
         }
+
         guard profile.mergedStrokeAllowance > 0 else { return false }
-        let minimumRequired = max(1, templateStrokes.count - profile.mergedStrokeAllowance)
-        guard strokes.count >= minimumRequired else { return false }
-        let coverage = coverageRatio(for: strokes, templateStrokes: templateStrokes)
-        return coverage >= profile.completionCoverageThreshold
+
+        let remaining = templateStrokes.count - currentStrokeIndex
+        guard remaining <= profile.mergedStrokeAllowance else { return false }
+
+        var perStrokeCoverage: [Double] = []
+        let coverage = coverageRatio(for: strokes,
+                                     templateStrokes: templateStrokes,
+                                     corridor: mergeCoverageCorridor,
+                                     perStroke: &perStrokeCoverage)
+        if coverage >= profile.completionCoverageThreshold {
+            let tailRange = currentStrokeIndex..<templateStrokes.count
+            let tailSatisfied = tailRange.allSatisfy { index in
+                perStrokeCoverage[safe: index] ?? 0 >= profile.completionCoverageThreshold
+            }
+            if tailSatisfied {
+                currentStrokeIndex = templateStrokes.count
+                return true
+            }
+        }
+        return false
     }
 
     private func showWarning(_ message: String) {
@@ -876,6 +1180,7 @@ private struct WordLayout {
         let strokes: [ScaledStroke]
         let frame: CGRect
         let lineWidth: CGFloat
+        let strokeBounds: CGRect?
         var isPractiseable: Bool { item.isPractiseable && !strokes.isEmpty }
     }
 
@@ -905,14 +1210,18 @@ private struct WordLayout {
             let strokes: [HandwritingTemplate.Stroke]
             let minX: CGFloat
             let maxX: CGFloat
-            let scale: CGFloat
+            let baseScale: CGFloat
             let width: CGFloat
             let lineWidth: CGFloat
+            let baseline: CGFloat
+            let ascenderScale: CGFloat
+            let descenderScale: CGFloat
+            let scaledXHeight: CGFloat?
         }
 
         var descriptors: [Descriptor] = []
         var rawWidths: [CGFloat] = []
-        var scaledXHeight: CGFloat = 0
+        var xHeightSamples: [CGFloat] = []
 
         for item in items {
             if let template = item.template {
@@ -920,29 +1229,41 @@ private struct WordLayout {
                 let allPoints = sorted.flatMap { $0.points }
                 let minX = allPoints.map(\.x).min() ?? 0
                 let maxX = allPoints.map(\.x).max() ?? 0
-                let baseScale = rowAscender / CGFloat(max(template.metrics.ascender, 1))
+                let ascenderValue = CGFloat(max(template.metrics.ascender, 1))
+                let descenderValue = CGFloat(abs(template.metrics.descender))
+                let ascScale = rowAscender / ascenderValue
+                let descScale = descenderValue > 0 ? rowDescender / descenderValue : ascScale
+                let baseScale = ascScale
                 let width = CGFloat(maxX - minX) * baseScale
+                let baseline = CGFloat(template.metrics.baseline)
+                let xHeightDistance = CGFloat(template.metrics.xHeight - template.metrics.baseline)
+                let scaledXHeight = xHeightDistance > 0 ? xHeightDistance * ascScale : nil
+                scaledXHeight.map { xHeightSamples.append($0) }
                 let descriptor = Descriptor(item: item,
                                             strokes: sorted,
                                             minX: CGFloat(minX),
                                             maxX: CGFloat(maxX),
-                                            scale: baseScale,
+                                            baseScale: baseScale,
                                             width: width,
-                                            lineWidth: metrics.practiceLineWidth)
+                                            lineWidth: metrics.practiceLineWidth,
+                                            baseline: baseline,
+                                            ascenderScale: ascScale,
+                                            descenderScale: descScale,
+                                            scaledXHeight: scaledXHeight)
                 descriptors.append(descriptor)
                 rawWidths.append(width)
-                if scaledXHeight == 0 {
-                    let xRatio = CGFloat(template.metrics.xHeight / template.metrics.ascender)
-                    scaledXHeight = rowAscender * xRatio
-                }
             } else {
                 descriptors.append(Descriptor(item: item,
                                               strokes: [],
                                               minX: 0,
                                               maxX: 0,
-                                              scale: 1,
+                                              baseScale: 1,
                                               width: item.isSpace ? baseSpaceWidth : baseSpacing,
-                                            lineWidth: metrics.practiceLineWidth))
+                                              lineWidth: metrics.practiceLineWidth,
+                                              baseline: 0,
+                                              ascenderScale: 1,
+                                              descenderScale: 1,
+                                              scaledXHeight: nil))
                 rawWidths.append(item.isSpace ? baseSpaceWidth : baseSpacing)
             }
         }
@@ -967,23 +1288,28 @@ private struct WordLayout {
                                         item: descriptor.item,
                                         strokes: [],
                                         frame: frame,
-                                        lineWidth: descriptor.lineWidth))
+                                        lineWidth: descriptor.lineWidth,
+                                        strokeBounds: nil))
             } else {
                 var scaledStrokes: [ScaledStroke] = []
-                let scale = descriptor.scale * compression
+                let horizontalScale = descriptor.baseScale * compression
                 let minX = descriptor.minX
                 let segmentFrame = CGRect(x: cursor,
                                           y: 0,
                                           width: segmentWidth,
                                           height: totalHeight)
+                var unionBounds: CGRect?
 
                 for stroke in descriptor.strokes {
                     let convertedPoints = stroke.points.map { point in
                         WordLayout.convert(point: point,
                                            minX: minX,
-                                           scale: scale,
+                                           horizontalScale: horizontalScale,
+                                           ascenderScale: descriptor.ascenderScale,
+                                           descenderScale: descriptor.descenderScale,
                                            cursor: cursor,
                                            ascender: rowAscender,
+                                           baseline: descriptor.baseline,
                                            isLeftHanded: isLeftHanded,
                                            segmentWidth: segmentWidth)
                     }
@@ -992,18 +1318,27 @@ private struct WordLayout {
                         path.move(to: first)
                         path.addLines(Array(convertedPoints.dropFirst()))
                     }
+                    let pathBounds = path.boundingRect
+                    unionBounds = unionBounds.map { $0.union(pathBounds) } ?? pathBounds
+
                     let startPoint = WordLayout.convert(point: stroke.start ?? stroke.points.first ?? .zero,
                                                         minX: minX,
-                                                        scale: scale,
+                                                        horizontalScale: horizontalScale,
+                                                        ascenderScale: descriptor.ascenderScale,
+                                                        descenderScale: descriptor.descenderScale,
                                                         cursor: cursor,
                                                         ascender: rowAscender,
+                                                        baseline: descriptor.baseline,
                                                         isLeftHanded: isLeftHanded,
                                                         segmentWidth: segmentWidth)
                     let endPoint = WordLayout.convert(point: stroke.end ?? stroke.points.last ?? .zero,
                                                       minX: minX,
-                                                      scale: scale,
+                                                      horizontalScale: horizontalScale,
+                                                      ascenderScale: descriptor.ascenderScale,
+                                                      descenderScale: descriptor.descenderScale,
                                                       cursor: cursor,
                                                       ascender: rowAscender,
+                                                      baseline: descriptor.baseline,
                                                       isLeftHanded: isLeftHanded,
                                                       segmentWidth: segmentWidth)
                     scaledStrokes.append(ScaledStroke(id: stroke.id,
@@ -1018,13 +1353,20 @@ private struct WordLayout {
                                         item: descriptor.item,
                                         strokes: scaledStrokes,
                                         frame: segmentFrame,
-                                        lineWidth: descriptor.lineWidth))
+                                        lineWidth: descriptor.lineWidth,
+                                        strokeBounds: unionBounds))
             }
             cursor += segmentWidth + baseSpacing * compression
         }
 
         self.segments = segments
-        self.scaledXHeight = scaledXHeight == 0 ? rowAscender * 0.6 : scaledXHeight
+        let resolvedXHeight: CGFloat
+        if xHeightSamples.isEmpty {
+            resolvedXHeight = rowAscender * 0.6
+        } else {
+            resolvedXHeight = xHeightSamples.reduce(0, +) / CGFloat(xHeightSamples.count)
+        }
+        self.scaledXHeight = resolvedXHeight
         self.ascender = rowAscender
         self.descender = rowDescender
         self.width = availableWidth
@@ -1035,16 +1377,21 @@ private struct WordLayout {
 
     private static func convert(point: CGPoint,
                                 minX: CGFloat,
-                                scale: CGFloat,
+                                horizontalScale: CGFloat,
+                                ascenderScale: CGFloat,
+                                descenderScale: CGFloat,
                                 cursor: CGFloat,
                                 ascender: CGFloat,
+                                baseline: CGFloat,
                                 isLeftHanded: Bool,
                                 segmentWidth: CGFloat) -> CGPoint {
-        var x = (CGFloat(point.x) - minX) * scale
+        var x = (CGFloat(point.x) - minX) * horizontalScale
         if isLeftHanded {
             x = segmentWidth - x
         }
-        let y = ascender - CGFloat(point.y) * scale
+        let displacement = CGFloat(point.y) - baseline
+        let verticalScale = displacement >= 0 ? ascenderScale : descenderScale
+        let y = ascender - displacement * verticalScale
         return CGPoint(x: cursor + x, y: y)
     }
 }

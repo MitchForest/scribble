@@ -24,6 +24,16 @@ final class FreePracticeViewModel: ObservableObject {
         timeline[safe: currentLetterIndex]
     }
 
+    func replay(at index: Int) {
+        guard timeline.indices.contains(index),
+              timeline[index].isPractiseable else { return }
+        for resetIndex in index..<letterStates.count {
+            letterStates[resetIndex].isComplete = false
+            letterStates[resetIndex].hadWarning = false
+        }
+        currentLetterIndex = index
+    }
+
     func jump(to index: Int) {
         guard timeline.indices.contains(index),
               timeline[index].isPractiseable else { return }

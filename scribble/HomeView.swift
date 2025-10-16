@@ -344,7 +344,7 @@ private struct ProfileQuickActionsSheet: View {
             }
 
             Button {
-                withAnimation(.spring(response: 0.42, dampingFraction: 0.85, blendDuration: 0.15)) {
+                withAnimation(.easeInOut(duration: 0.28)) {
                     activePage = .profileCenter
                 }
             } label: {
@@ -380,35 +380,49 @@ private struct ProfileQuickActionsSheet: View {
         .padding(.bottom, 24)
     }
 
+    private var overviewPage: some View {
+        ScrollView(showsIndicators: false) {
+            overviewContent
+        }
+        .frame(maxWidth: .infinity, alignment: .top)
+    }
+
+    private var profileCenterPage: some View {
+        ProfileCenterView(showsHandle: false,
+                          onBack: { withAnimation(.easeInOut(duration: 0.28)) { activePage = .overview } },
+                          onClose: { dismiss() })
+            .frame(maxWidth: .infinity, alignment: .top)
+    }
+
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: 12) {
             Capsule()
                 .fill(Color.black.opacity(0.12))
                 .frame(width: 60, height: 6)
                 .padding(.top, 16)
 
-            Group {
-                switch activePage {
-                case .overview:
-                    overviewContent
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
-                case .profileCenter:
-                    ProfileCenterView(showsHandle: false,
-                                      onBack: { withAnimation(.spring(response: 0.42, dampingFraction: 0.85)) { activePage = .overview } },
-                                      onClose: { dismiss() })
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
-                }
+            ZStack {
+                overviewPage
+                    .opacity(activePage == .overview ? 1 : 0)
+                    .allowsHitTesting(activePage == .overview)
+
+                profileCenterPage
+                    .opacity(activePage == .profileCenter ? 1 : 0)
+                    .allowsHitTesting(activePage == .profileCenter)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .animation(.easeInOut(duration: 0.28), value: activePage)
         }
-        .animation(.spring(response: 0.42, dampingFraction: 0.85, blendDuration: 0.2), value: activePage)
-        .onChange(of: selectedDifficulty) { _, newValue in
-            guard newValue != difficulty else { return }
-            onDifficultyChange(newValue)
-        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .padding(.bottom, 12)
         .background(
             ScribbleColors.cardBackground
                 .ignoresSafeArea()
         )
+        .onChange(of: selectedDifficulty) { _, newValue in
+            guard newValue != difficulty else { return }
+            onDifficultyChange(newValue)
+        }
         .presentationDetents([.large])
         .presentationDragIndicator(.hidden)
     }
