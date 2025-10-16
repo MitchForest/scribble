@@ -3,16 +3,14 @@ import PencilKit
 
 struct LessonPracticeView: View {
     @EnvironmentObject private var dataStore: PracticeDataStore
-    @State private var showStreakHistory = false
+    @State private var activeDialog: QuickDialog?
     @State private var currentIndex: Int
     @State private var boardKey = UUID()
 
     private let lessons: [PracticeLesson]
-    private let unit: PracticeUnit?
 
     init(lesson: PracticeLesson) {
         let unit = PracticeLessonLibrary.unit(for: lesson.unitId)
-        self.unit = unit
         let ordered = unit?.lessons.sorted(by: { $0.order < $1.order }) ?? [lesson]
         self.lessons = ordered
         let startIndex = ordered.firstIndex(where: { $0.id == lesson.id }) ?? 0
@@ -32,16 +30,11 @@ struct LessonPracticeView: View {
         dataStore.currentStreak()
     }
 
-    private var lessonProgress: PracticeDataStore.LessonProgress {
-        dataStore.lessonProgress(for: currentLesson)
-    }
-
     var body: some View {
         ZStack {
             PracticeBackground()
-            VStack(alignment: .leading, spacing: 28) {
+            VStack(alignment: .leading, spacing: 24) {
                 header
-                lessonHeader
                 lessonBoard
                 Spacer()
             }
@@ -49,63 +42,41 @@ struct LessonPracticeView: View {
             .padding(.vertical, 34)
         }
         .toolbar(.hidden, for: .navigationBar)
-        .sheet(isPresented: $showStreakHistory) {
-            if #available(iOS 16.0, *) {
-                StreakHistorySheet(streak: streak,
-                                   contributions: dataStore.contributions(forDays: 84),
-                                   goal: dataStore.profile.goal)
-                    .presentationDetents([.large])
-                    .presentationDragIndicator(.visible)
-            } else {
-                StreakHistorySheet(streak: streak,
-                                   contributions: dataStore.contributions(forDays: 84),
-                                   goal: dataStore.profile.goal)
+        .overlay {
+            if let dialog = activeDialog {
+                DialogOverlay {
+                    dialogView(for: dialog)
+                } onDismiss: {
+                    closeDialog()
+                }
             }
         }
+        .animation(.easeInOut(duration: 0.25), value: activeDialog)
     }
 
     private var header: some View {
         HStack(alignment: .center, spacing: 20) {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 0) {
                 Text("Scribble")
                     .font(.system(size: 44, weight: .black, design: .serif))
                     .italic()
                     .foregroundStyle(Color(red: 0.24, green: 0.33, blue: 0.57))
-                Text("Focused handwriting practice")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Color(red: 0.48, green: 0.56, blue: 0.74))
             }
             Spacer()
             HStack(spacing: 16) {
                 StreakBadge(streak: streak) {
-                    showStreakHistory = true
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        activeDialog = .streak
+                    }
                 }
                 ProfileMenuButton(seed: dataStore.profile.avatarSeed,
                                   progress: dataStore.dailyProgressRatio(),
-                                  today: dataStore.todayContribution(),
-                                  goal: dataStore.profile.goal,
-                                  difficulty: dataStore.settings.difficulty,
-                                  streak: streak,
-                                  onDifficultyChange: { dataStore.updateDifficulty($0) })
+                                  onOpen: {
+                                      withAnimation(.easeInOut(duration: 0.25)) {
+                                          activeDialog = .profile
+                                      }
+                                  })
             }
-        }
-    }
-
-    private var lessonHeader: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if let unit {
-                Text(unit.title.uppercased())
-                    .font(.caption.weight(.heavy))
-                    .foregroundColor(Color(red: 0.54, green: 0.62, blue: 0.78))
-                    .kerning(1.1)
-            }
-            Text(currentLesson.title)
-                .font(.system(size: 30, weight: .heavy, design: .rounded))
-                .foregroundColor(Color(red: 0.28, green: 0.4, blue: 0.63))
-            Text(currentLesson.subtitle)
-                .font(.subheadline.weight(.semibold))
-                .foregroundColor(Color(red: 0.48, green: 0.56, blue: 0.74))
-            LessonProgressChip(text: "\(min(lessonProgress.completed, lessonProgress.total)) / \(max(lessonProgress.total, 1))")
         }
     }
 
@@ -154,6 +125,24 @@ struct LessonPracticeView: View {
                                     category: .practiceLine,
                                     letterId: letterId)
     }
+
+    private func closeDialog() {
+        withAnimation(.easeInOut(duration: 0.25)) {
+            activeDialog = nil
+        }
+    }
+
+    @ViewBuilder
+    private func dialogView(for dialog: QuickDialog) -> some View {
+        switch dialog {
+        case .profile:
+            ProfileQuickActionsDialog(onClose: { closeDialog() })
+                .environmentObject(dataStore)
+        case .streak:
+            StreakDialog(onClose: { closeDialog() })
+                .environmentObject(dataStore)
+        }
+    }
 }
 
 private struct StreakBadge: View {
@@ -184,27 +173,6 @@ private struct StreakBadge: View {
             .shadow(color: Color.black.opacity(0.12), radius: 14, x: 0, y: 8)
         }
         .buttonStyle(.plain)
-    }
-}
-
-private struct LessonProgressChip: View {
-    let text: String
-
-    var body: some View {
-        Text(text)
-            .font(.caption.weight(.heavy))
-            .foregroundColor(Color(red: 0.26, green: 0.36, blue: 0.58))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(Color.white.opacity(0.95))
-            )
-            .overlay(
-                Capsule(style: .continuous)
-                    .stroke(Color(red: 0.66, green: 0.74, blue: 0.9), lineWidth: 1.2)
-            )
-            .shadow(color: Color.black.opacity(0.08), radius: 5, x: 0, y: 3)
     }
 }
 

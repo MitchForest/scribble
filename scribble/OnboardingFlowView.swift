@@ -8,38 +8,6 @@ struct OnboardingFlowView: View {
     @EnvironmentObject private var dataStore: PracticeDataStore
     private typealias Palette = ScribbleColors
 
-    enum Gender: String, CaseIterable, Identifiable {
-        case male = "Boy"
-        case female = "Girl"
-        case unspecified = "Surprise me"
-
-        var id: String { rawValue }
-
-        var shortLabel: String {
-            switch self {
-            case .male: return "Boy"
-            case .female: return "Girl"
-            case .unspecified: return "Surprise me"
-            }
-        }
-
-        var friendlyDescription: String {
-            switch self {
-            case .male: return "Use boy words like he/him."
-            case .female: return "Use girl words like she/her."
-            case .unspecified: return "Skip for now or choose later."
-            }
-        }
-
-        var seedTag: String {
-            switch self {
-            case .male: return "hero"
-            case .female: return "heroine"
-            case .unspecified: return "explorer"
-            }
-        }
-    }
-
     enum ExperienceLevel: String, CaseIterable, Identifiable {
         case beginner = "Beginner"
         case intermediate = "Intermediate"
@@ -98,7 +66,6 @@ struct OnboardingFlowView: View {
 
     private enum Step: Int, CaseIterable, Identifiable {
         case name
-        case gender
         case age
         case avatar
         case skillLevel
@@ -111,7 +78,6 @@ struct OnboardingFlowView: View {
 
     @State private var currentStep: Step = .name
     @State private var name: String = ""
-    @State private var gender: Gender?
     @State private var age: Int = 8
     @State private var experience: ExperienceLevel?
     @State private var selectedDays: Set<Weekday> = Weekday.defaultSelection
@@ -135,8 +101,6 @@ struct OnboardingFlowView: View {
         switch currentStep {
         case .name:
             return !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        case .gender:
-            return gender != nil
         case .age:
             return ageRange.contains(age)
         case .avatar:
@@ -161,25 +125,27 @@ struct OnboardingFlowView: View {
 
             GeometryReader { proxy in
                 let step = currentStep
-                let verticalPadding = max(proxy.size.height * 0.06, 24)
+                let verticalPadding = max(proxy.size.height * verticalPaddingFactor(for: step), 24)
                 let availableHeight = max(proxy.size.height - (verticalPadding * 2), 320)
                 let cardMinHeight = cardMinimumHeight(for: step)
+                let effectiveMinHeight = min(cardMinHeight, availableHeight)
                 let verticalInsets = cardVerticalPadding(for: step)
                 let navigationSpacing = cardNavigationSpacing(for: step)
                 let intrinsicHeight = intrinsicCardHeight(for: step, verticalInsets: verticalInsets)
                 let cappedIntrinsic = min(cardMaximumHeight(for: step, containerHeight: proxy.size.height), intrinsicHeight)
                 let desiredHeight = min(cappedIntrinsic, availableHeight)
-                let candidateHeight = max(cardMinHeight, desiredHeight)
+                let candidateHeight = max(effectiveMinHeight, desiredHeight)
                 let cardHeight = adjustedCardHeight(for: step,
                                                     candidate: candidateHeight,
-                                                    minimum: cardMinHeight)
+                                                    minimum: effectiveMinHeight)
+                let cardWidth = min(cardPreferredWidth(for: step), max(proxy.size.width - 48, 360))
 
                 VStack {
                     Spacer(minLength: verticalPadding)
 
                     VStack(spacing: navigationSpacing) {
                         cardContent(for: step,
-                                    cardMinHeight: cardMinHeight,
+                                    cardMinHeight: effectiveMinHeight,
                                     cardHeight: cardHeight)
                             .transition(.move(edge: .trailing).combined(with: .opacity))
 
@@ -187,8 +153,8 @@ struct OnboardingFlowView: View {
                     }
                     .padding(.horizontal, 28)
                     .padding(.vertical, verticalInsets)
-                    .frame(maxWidth: 560)
-                    .frame(minHeight: cardMinHeight,
+                    .frame(maxWidth: cardWidth)
+                    .frame(minHeight: effectiveMinHeight,
                            maxHeight: cardHeight,
                            alignment: .top)
                     .background(
@@ -207,9 +173,6 @@ struct OnboardingFlowView: View {
         .onAppear {
             prepareInitialState()
         }
-        .onChange(of: gender) { _, newValue in
-            regenerateAvatarOptions(for: newValue)
-        }
         .onChange(of: experience) { _, newValue in
             if let level = newValue {
                 lettersPerDay = level.defaultLettersPerDay
@@ -219,22 +182,20 @@ struct OnboardingFlowView: View {
 
     @ViewBuilder
     private func stepView(for step: Step) -> some View {
-        if step == .name {
+        switch step {
+        case .name:
             NameStepView(name: $name,
                          isFocused: $nameFieldFocused,
                          onSubmit: advanceIfPossible)
-        } else if step == .gender {
-            GenderStepView(gender: $gender)
-        } else if step == .age {
+        case .age:
             AgeStepView(age: $age, range: ageRange)
-        } else if step == .avatar {
+        case .avatar:
             AvatarStepView(seeds: avatarOptions,
                            selectedSeed: $selectedAvatarSeed,
-                           gender: gender,
-                           onShuffle: { regenerateAvatarOptions(for: gender, force: true) })
-        } else if step == .skillLevel {
+                           onShuffle: { regenerateAvatarOptions(force: true) })
+        case .skillLevel:
             SkillLevelStepView(experience: $experience)
-        } else {
+        case .goals:
             GoalsStepView(selectedDays: $selectedDays,
                           lettersPerDay: $lettersPerDay,
                           goalSeconds: goalSeconds)
@@ -279,10 +240,9 @@ struct OnboardingFlowView: View {
         switch step {
         case .name: return 260
         case .age: return 280
-        case .gender: return 420
-        case .avatar: return 560
-        case .skillLevel: return 440
-        case .goals: return 500
+        case .avatar: return 540
+        case .skillLevel: return 420
+        case .goals: return 520
         }
     }
 
@@ -291,23 +251,44 @@ struct OnboardingFlowView: View {
         let cap: CGFloat
         switch step {
         case .avatar:
-            factor = 0.88
+            factor = 0.9
             cap = 780
         case .goals:
-            factor = 0.84
+            factor = 0.88
+            cap = 740
+        case .skillLevel:
+            factor = 0.82
             cap = 700
-        case .gender, .skillLevel:
-            factor = 0.8
-            cap = 680
         case .age:
-            factor = 0.74
-            cap = 600
+            factor = 0.76
+            cap = 620
         case .name:
-            factor = 0.7
-            cap = 560
+            factor = 0.72
+            cap = 580
         }
         let computed = containerHeight * factor
         return min(max(computed, cardMinimumHeight(for: step) + 40), cap)
+    }
+
+    private func verticalPaddingFactor(for step: Step) -> CGFloat {
+        switch step {
+        case .avatar, .goals:
+            return 0.05
+        case .skillLevel:
+            return 0.055
+        case .age, .name:
+            return 0.06
+        }
+    }
+
+    private func cardPreferredWidth(for step: Step) -> CGFloat {
+        switch step {
+        case .name: return 520
+        case .age: return 540
+        case .avatar: return 680
+        case .skillLevel: return 640
+        case .goals: return 720
+        }
     }
 
     private func adjustedCardHeight(for step: Step,
@@ -325,8 +306,9 @@ struct OnboardingFlowView: View {
 
     private func cardVerticalPadding(for step: Step) -> CGFloat {
         switch step {
-        case .avatar, .goals: return 32
-        case .skillLevel, .gender: return 30
+        case .avatar: return 30
+        case .goals: return 28
+        case .skillLevel: return 28
         case .age: return 18
         case .name: return 16
         }
@@ -336,8 +318,8 @@ struct OnboardingFlowView: View {
         switch step {
         case .name: return 16
         case .age: return 22
-        case .gender: return 28
-        case .skillLevel, .goals: return 30
+        case .skillLevel: return 28
+        case .goals: return 28
         case .avatar: return 32
         }
     }
@@ -346,61 +328,34 @@ struct OnboardingFlowView: View {
         switch step {
         case .name: return 200
         case .age: return 240
-        case .gender: return 540
-        case .skillLevel: return 540
-        case .avatar: return 720
-        case .goals: return 700
+        case .skillLevel: return 400
+        case .avatar: return 640
+        case .goals: return 600
         }
     }
 
     private func navigationReservedHeight(for step: Step) -> CGFloat {
         switch step {
-        case .avatar: return 220
-        case .goals: return 240
-        case .skillLevel, .gender: return 200
+        case .avatar: return 210
+        case .goals: return 220
+        case .skillLevel: return 190
         case .age, .name: return 120
         }
     }
-
-    private func scrollBottomPadding(for step: Step) -> CGFloat {
-        switch step {
-        case .avatar: return 24
-        case .goals: return 18
-        default: return 0
-        }
-    }
-
+    
     @ViewBuilder
     private func cardContent(for step: Step,
                              cardMinHeight: CGFloat,
                              cardHeight: CGFloat) -> some View {
-        let effectiveMaxHeight = max(cardHeight - navigationReservedHeight(for: step), cardMinHeight - 40)
-        let baseContent = stepView(for: step)
-
-        if shouldEnableScroll(for: step, cardHeight: cardHeight) {
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 0) {
-                    baseContent
-                }
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.bottom, scrollBottomPadding(for: step))
-            }
-            .frame(maxHeight: max(effectiveMaxHeight, cardMinHeight * 0.75))
-        } else {
-            VStack(spacing: 0) {
-                baseContent
-            }
-            .frame(maxWidth: .infinity, alignment: .center)
+        VStack(spacing: 0) {
+            stepView(for: step)
         }
-    }
-
-    private func shouldEnableScroll(for step: Step, cardHeight: CGFloat) -> Bool {
-        preferredContentHeight(for: step) > cardHeight
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 
     private func prepareInitialState() {
         if avatarOptions.isEmpty {
-            regenerateAvatarOptions(for: gender)
+            regenerateAvatarOptions()
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
             nameFieldFocused = true
@@ -425,7 +380,7 @@ struct OnboardingFlowView: View {
             triggerStepChangeHaptic()
         }
 
-        if currentStep == .gender {
+        if currentStep != .name {
             nameFieldFocused = false
         }
     }
@@ -445,17 +400,15 @@ struct OnboardingFlowView: View {
         }
     }
 
-    private func regenerateAvatarOptions(for gender: Gender?, force: Bool = false) {
-        let baseGender = gender ?? .unspecified
+    private func regenerateAvatarOptions(force: Bool = false) {
         if !force,
-           !avatarOptions.isEmpty,
-           avatarOptions.allSatisfy({ $0.contains(baseGender.seedTag) }) {
+           !avatarOptions.isEmpty {
             return
         }
 
         var seeds: Set<String> = []
         while seeds.count < 4 {
-            seeds.insert(OnboardingFlowView.randomSeed(for: baseGender))
+            seeds.insert(OnboardingFlowView.randomSeed())
         }
         avatarOptions = Array(seeds)
 
@@ -472,7 +425,7 @@ struct OnboardingFlowView: View {
             dataStore.updateDisplayName(trimmedName)
         }
 
-        let finalAvatar = selectedAvatarSeed ?? OnboardingFlowView.randomSeed(for: gender ?? .unspecified)
+        let finalAvatar = selectedAvatarSeed ?? OnboardingFlowView.randomSeed()
         dataStore.updateAvatarSeed(finalAvatar)
 
         dataStore.updateDifficulty(chosenExperience.defaultDifficulty)
@@ -492,8 +445,10 @@ struct OnboardingFlowView: View {
         #endif
     }
 
-    private static func randomSeed(for gender: Gender) -> String {
-        "\(gender.seedTag)-\(UUID().uuidString.prefix(8))"
+    private static func randomSeed() -> String {
+        let tags = ["hero", "heroine", "explorer"]
+        let prefix = tags.randomElement() ?? "hero"
+        return "\(prefix)-\(UUID().uuidString.prefix(8))"
     }
 }
 
@@ -573,54 +528,6 @@ private struct NameStepView: View {
     }
 }
 
-private struct GenderStepView: View {
-    @Binding var gender: OnboardingFlowView.Gender?
-
-    var body: some View {
-        VStack(spacing: 24) {
-            VStack(spacing: 10) {
-                Text("What's your gender?")
-                    .font(.system(size: 32, weight: .heavy, design: .rounded))
-                    .foregroundColor(Palette.primary)
-                    .multilineTextAlignment(.center)
-
-                Text("Pick an option and tap Next.")
-                    .font(.system(size: 20, weight: .medium, design: .rounded))
-                    .foregroundColor(Palette.secondary)
-                    .multilineTextAlignment(.center)
-            }
-
-            VStack(spacing: 18) {
-                ForEach(OnboardingFlowView.Gender.allCases) { option in
-                    KidSelectableOption(title: option.shortLabel,
-                                        subtitle: option.friendlyDescription,
-                                        symbolName: symbol(for: option),
-                                        symbolColor: color(for: option),
-                                        isSelected: gender == option) {
-                        gender = option
-                    }
-                }
-            }
-        }
-    }
-
-    private func symbol(for gender: OnboardingFlowView.Gender) -> String {
-        switch gender {
-        case .male: return "figure.wave"
-        case .female: return "smiley.fill"
-        case .unspecified: return "sparkles"
-        }
-    }
-
-    private func color(for gender: OnboardingFlowView.Gender) -> Color {
-        switch gender {
-        case .male: return Color(red: 0.53, green: 0.72, blue: 0.98)
-        case .female: return Color(red: 1.0, green: 0.77, blue: 0.87)
-        case .unspecified: return Color(red: 0.82, green: 0.89, blue: 1.0)
-        }
-    }
-}
-
 private struct AgeStepView: View {
     @Binding var age: Int
     let range: ClosedRange<Int>
@@ -662,7 +569,6 @@ private struct AgeStepView: View {
 private struct AvatarStepView: View {
     let seeds: [String]
     @Binding var selectedSeed: String?
-    let gender: OnboardingFlowView.Gender?
     let onShuffle: () -> Void
 
     var body: some View {
@@ -679,7 +585,7 @@ private struct AvatarStepView: View {
                     .multilineTextAlignment(.center)
             }
 
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 18)], spacing: 18) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 18)], spacing: 18) {
                 ForEach(seeds, id: \.self) { seed in
                     Button {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
@@ -713,7 +619,7 @@ private struct AvatarStepView: View {
     @ViewBuilder
     private func avatarCard(for seed: String) -> some View {
         VStack(spacing: 14) {
-            DiceBearAvatar(seed: seed, size: 140)
+            DiceBearAvatar(seed: seed, size: 132)
                 .overlay(
                     Circle()
                         .stroke(selectedSeed == seed ? Palette.accent : Color.clear, lineWidth: 6)
@@ -721,7 +627,7 @@ private struct AvatarStepView: View {
                 .shadow(color: Color.black.opacity(0.1), radius: 10, x: 0, y: 8)
 
             Text(selectedSeed == seed ? "This one!" : "Pick me")
-                .font(.system(size: 18, weight: .semibold, design: .rounded))
+                .font(.system(size: 17, weight: .semibold, design: .rounded))
                 .foregroundColor(Palette.secondary)
         }
         .padding(18)
@@ -754,7 +660,7 @@ private struct SkillLevelStepView: View {
                     .multilineTextAlignment(.center)
             }
 
-            VStack(spacing: 18) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 18)], spacing: 18) {
                 ForEach(OnboardingFlowView.ExperienceLevel.allCases) { level in
                     KidSelectableOption(title: level.rawValue,
                                         subtitle: level.description,
@@ -763,6 +669,7 @@ private struct SkillLevelStepView: View {
                                         isSelected: experience == level) {
                         experience = level
                     }
+                    .frame(maxWidth: .infinity)
                 }
             }
         }
@@ -793,8 +700,8 @@ private struct GoalsStepView: View {
     private let sliderRange: ClosedRange<Double> = 20...150
 
     var body: some View {
-        VStack(spacing: 28) {
-            VStack(spacing: 10) {
+        VStack(spacing: 24) {
+            VStack(spacing: 8) {
                 Text("Set your goals")
                     .font(.system(size: 32, weight: .heavy, design: .rounded))
                     .foregroundColor(Palette.primary)
@@ -806,39 +713,76 @@ private struct GoalsStepView: View {
                     .multilineTextAlignment(.center)
             }
 
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Practice days")
-                    .font(.system(size: 20, weight: .bold, design: .rounded))
-                    .foregroundColor(Palette.primary)
+            adaptiveGoalContent()
+        }
+    }
 
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 3), spacing: 12) {
-                    ForEach(OnboardingFlowView.Weekday.all) { day in
-                        KidDayButton(day: day, isSelected: selectedDays.contains(day)) {
-                            toggle(day)
-                        }
+    @ViewBuilder
+    private func adaptiveGoalContent() -> some View {
+        if #available(iOS 16.0, macOS 13.0, *) {
+            ViewThatFits(in: .vertical) {
+                wideGoalLayout()
+                stackedGoalLayout()
+            }
+        } else {
+            stackedGoalLayout()
+        }
+    }
+
+    @ViewBuilder
+    private func wideGoalLayout() -> some View {
+        HStack(alignment: .top, spacing: 32) {
+            dayPicker()
+                .frame(maxWidth: .infinity, alignment: .leading)
+            sliderControls()
+                .frame(maxWidth: 320, alignment: .leading)
+        }
+    }
+
+    @ViewBuilder
+    private func stackedGoalLayout() -> some View {
+        VStack(spacing: 24) {
+            dayPicker()
+            sliderControls()
+        }
+    }
+
+    @ViewBuilder
+    private func dayPicker() -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Practice days")
+                .font(.system(size: 20, weight: .bold, design: .rounded))
+                .foregroundColor(Palette.primary)
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 12)], spacing: 12) {
+                ForEach(OnboardingFlowView.Weekday.all) { day in
+                    KidDayButton(day: day, isSelected: selectedDays.contains(day)) {
+                        toggle(day)
                     }
                 }
             }
+        }
+    }
 
-            VStack(spacing: 20) {
-                Text("Letters each practice day")
-                    .font(.system(size: 20, weight: .bold, design: .rounded))
-                    .foregroundColor(Palette.primary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+    @ViewBuilder
+    private func sliderControls() -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Letters each practice day")
+                .font(.system(size: 20, weight: .bold, design: .rounded))
+                .foregroundColor(Palette.primary)
 
-                VStack(spacing: 16) {
-                    Slider(value: Binding(
-                        get: { Double(lettersPerDay) },
-                        set: { lettersPerDay = Int($0) }
-                    ), in: sliderRange, step: 5)
-                    .tint(Palette.accent)
+            VStack(spacing: 12) {
+                Slider(value: Binding(
+                    get: { Double(lettersPerDay) },
+                    set: { lettersPerDay = Int($0) }
+                ), in: sliderRange, step: 5)
+                .tint(Palette.accent)
 
-                    Text("\(lettersPerDay) letters ≈ \(formatDuration(goalSeconds))")
-                        .font(.system(size: 20, weight: .semibold, design: .rounded))
-                        .foregroundColor(Palette.secondary)
-                }
-                .padding(.horizontal, 8)
+                Text("\(lettersPerDay) letters ≈ \(formatDuration(goalSeconds))")
+                    .font(.system(size: 18, weight: .semibold, design: .rounded))
+                    .foregroundColor(Palette.secondary)
             }
+            .padding(.horizontal, 4)
         }
     }
 
@@ -956,14 +900,14 @@ private struct KidSelectableOption: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(alignment: .center, spacing: 18) {
+            HStack(alignment: .center, spacing: 16) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
                         .fill(symbolColor.opacity(0.85))
-                        .frame(width: 70, height: 70)
+                        .frame(width: 64, height: 64)
 
                     Image(systemName: symbolName)
-                        .font(.system(size: 28, weight: .bold))
+                        .font(.system(size: 24, weight: .bold))
                         .foregroundColor(Palette.primary.opacity(0.75))
                 }
 
@@ -973,7 +917,7 @@ private struct KidSelectableOption: View {
                         .foregroundColor(Palette.primary)
 
                     Text(subtitle)
-                        .font(.system(size: 17, weight: .medium, design: .rounded))
+                        .font(.system(size: 16, weight: .medium, design: .rounded))
                         .foregroundColor(Palette.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -986,7 +930,7 @@ private struct KidSelectableOption: View {
                         .font(.system(size: 32, weight: .bold))
                 }
             }
-            .padding(20)
+            .padding(18)
             .frame(maxWidth: .infinity)
             .background(
                 RoundedRectangle(cornerRadius: 32, style: .continuous)
@@ -1012,15 +956,15 @@ private struct KidDayButton: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 6) {
+            VStack(spacing: 4) {
                 Text(day.symbol)
-                    .font(.system(size: 22, weight: .heavy, design: .rounded))
+                    .font(.system(size: 21, weight: .heavy, design: .rounded))
                     .foregroundColor(isSelected ? Palette.accentDark : Palette.primary)
                 Text(day.fullName)
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
                     .foregroundColor(isSelected ? Palette.accentDark.opacity(0.8) : Palette.secondary.opacity(0.7))
             }
-            .padding(.vertical, 14)
+            .padding(.vertical, 12)
             .frame(maxWidth: .infinity)
             .background(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)

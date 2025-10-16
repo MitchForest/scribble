@@ -14,6 +14,11 @@ struct PencilCanvasView: UIViewRepresentable {
         view.backgroundColor = .clear
         view.alwaysBounceVertical = false
         view.alwaysBounceHorizontal = false
+        view.minimumZoomScale = 1
+        view.maximumZoomScale = 1
+        view.isScrollEnabled = false
+        view.contentOffset = .zero
+        view.contentInset = .zero
         if #available(iOS 14.0, *) {
             view.drawingPolicy = allowFingerFallback ? .anyInput : .pencilOnly
         } else {
@@ -26,6 +31,32 @@ struct PencilCanvasView: UIViewRepresentable {
     func updateUIView(_ uiView: PKCanvasView, context: Context) {
         if uiView.drawing != drawing {
             uiView.drawing = drawing
+        }
+        if uiView.minimumZoomScale != 1 {
+            uiView.minimumZoomScale = 1
+        }
+        if uiView.maximumZoomScale != 1 {
+            uiView.maximumZoomScale = 1
+        }
+        if uiView.isScrollEnabled {
+            uiView.isScrollEnabled = false
+        }
+        if uiView.alwaysBounceVertical {
+            uiView.alwaysBounceVertical = false
+        }
+        if uiView.alwaysBounceHorizontal {
+            uiView.alwaysBounceHorizontal = false
+        }
+        if uiView.contentInset != .zero {
+            uiView.contentInset = .zero
+        }
+        if drawing.strokes.isEmpty {
+            if uiView.zoomScale != 1 {
+                uiView.setZoomScale(1, animated: false)
+            }
+            if uiView.contentOffset != .zero {
+                uiView.setContentOffset(.zero, animated: false)
+            }
         }
         if #available(iOS 14.0, *) {
             let desiredPolicy: PKCanvasViewDrawingPolicy = allowFingerFallback ? .anyInput : .pencilOnly

@@ -78,7 +78,6 @@ private enum LetterAggregateStatus {
 
 struct PracticeFlowView: View {
     @EnvironmentObject private var dataStore: PracticeDataStore
-    @Environment(\.dismiss) private var dismiss
 
     private let letters = PracticeDataStore.focusLetters
 
@@ -94,6 +93,11 @@ struct PracticeFlowView: View {
     @State private var showSettingsSheet = false
     @State private var showQuickSettingsMenu = false
     @State private var hasInitialized = false
+    @State private var canSwipeToAdvance = false
+    @State private var showSwipeHint = false
+    @State private var swipeTransitionOffset: CGFloat = 0
+    @State private var activeDragOffset: CGFloat = 0
+    @State private var swipeAnimationInFlight = false
 
     init(startingLetter: String? = nil) {
         let index = startingLetter.flatMap { PracticeDataStore.focusLetters.firstIndex(of: $0) } ?? 0
@@ -116,6 +120,10 @@ struct PracticeFlowView: View {
     private var sessionIdentity: String {
         let handed = dataStore.settings.isLeftHanded ? "L" : "R"
         return "\(currentLetterId)|\(currentStrokeSize.rawValue)|\(handed)"
+    }
+
+    private var hasNextLetter: Bool {
+        currentLetterIndex + 1 < letters.count
     }
 
     private var inputPreferenceBinding: Binding<InputPreference> {
@@ -144,42 +152,53 @@ struct PracticeFlowView: View {
             )
             .ignoresSafeArea()
 
-            VStack(spacing: 18) {
-                letterStrip
-                StageProgressBar(currentStage: currentStage,
-                                  stageResults: stageResults)
-                    .padding(.top, 4)
+            GeometryReader { proxy in
+                let width = proxy.size.width
+                ZStack(alignment: .trailing) {
+                    VStack(spacing: 24) {
+                        letterStrip
 
-                if isSessionComplete {
-                    completionScreen
-                        .padding(.top, 32)
-                } else if let template = currentTemplate {
-                    PracticeSessionView(letterId: currentLetterId,
-                                        template: template,
-                                        stage: $currentStage,
-                                        allowFingerInput: allowFingerInput,
-                                        isLeftHanded: dataStore.settings.isLeftHanded,
-                                        strokeSize: currentStrokeSize,
-                                        difficulty: dataStore.settings.difficulty,
-                                        hapticsEnabled: dataStore.settings.hapticsEnabled,
-                                        onStageComplete: handleStageOutcome)
-                        .padding(.vertical, 24)
-                        .padding(.horizontal, 16)
-                        .background(RoundedRectangle(cornerRadius: 32).fill(Color.white.opacity(0.92)))
-                        .padding(.horizontal, 20)
-                        .id(sessionIdentity)
-                } else {
-                    ProgressView()
-                        .padding(.top, 40)
+                        if isSessionComplete {
+                            completionScreen
+                                .padding(.top, 24)
+                        } else if let template = currentTemplate {
+                            PracticeSessionView(letterId: currentLetterId,
+                                                template: template,
+                                                stage: $currentStage,
+                                                allowFingerInput: allowFingerInput,
+                                                isLeftHanded: dataStore.settings.isLeftHanded,
+                                                strokeSize: currentStrokeSize,
+                                                difficulty: dataStore.settings.difficulty,
+                                                hapticsEnabled: dataStore.settings.hapticsEnabled,
+                                                onStageComplete: handleStageOutcome)
+                                .padding(.vertical, 24)
+                                .padding(.horizontal, 16)
+                                .background(RoundedRectangle(cornerRadius: 32).fill(Color.white.opacity(0.92)))
+                                .padding(.horizontal, 20)
+                                .id(sessionIdentity)
+                        } else {
+                            ProgressView()
+                                .padding(.top, 32)
+                        }
+
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.top, 12)
+                    .padding(.bottom, 24)
+                    .offset(x: swipeTransitionOffset + activeDragOffset)
+                    .gesture(swipeGesture(for: width))
+
+                    if showSwipeHint && canSwipeToAdvance && hasNextLetter && !isSessionComplete {
+                        SwipeHintView()
+                            .padding(.trailing, 36)
+                            .transition(.move(edge: .trailing).combined(with: .opacity))
+                            .allowsHitTesting(false)
+                    }
                 }
-
-                Spacer(minLength: 0)
             }
-            .padding(.top, 12)
-            .padding(.bottom, 24)
         }
-        .navigationTitle(dataStore.displayName(for: currentLetterId))
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("")
+        .navigationBarBackButtonHidden(true)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -229,6 +248,57 @@ struct PracticeFlowView: View {
         .onChange(of: dataStore.settings.inputPreference) {
             resetForCurrentLetter(startNewAttempt: false)
         }
+    }
+
+    private func swipeGesture(for width: CGFloat) -> some Gesture {
+        DragGesture()
+            .onChanged { value in
+                guard canSwipeToAdvance && hasNextLetter && !swipeAnimationInFlight else { return }
+                let translation = max(0, value.translation.width)
+                activeDragOffset = translation
+                showSwipeHint = false
+            }
+            .onEnded { value in
+                let translation = max(0, value.translation.width)
+                let shouldAdvance = canSwipeToAdvance && hasNextLetter && translation > max(80, width * 0.2)
+                if shouldAdvance {
+                    activeDragOffset = 0
+                    triggerSwipeAdvance(width: width)
+                } else {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                        activeDragOffset = 0
+                    }
+                }
+            }
+    }
+
+    private func triggerSwipeAdvance(width: CGFloat) {
+        guard hasNextLetter, !swipeAnimationInFlight else { return }
+        swipeAnimationInFlight = true
+        canSwipeToAdvance = false
+        showSwipeHint = false
+        let travel = width == 0 ? UIScreen.main.bounds.width : width
+        withAnimation(.easeInOut(duration: 0.35)) {
+            swipeTransitionOffset = -travel
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.36) {
+            advanceToNextLetter()
+            swipeTransitionOffset = travel
+            withAnimation(.easeInOut(duration: 0.35)) {
+                swipeTransitionOffset = 0
+            }
+            swipeAnimationInFlight = false
+        }
+    }
+
+    private func resetSwipeState() {
+        canSwipeToAdvance = false
+        if showSwipeHint {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                showSwipeHint = false
+            }
+        }
+        activeDragOffset = 0
     }
 
     private var letterStrip: some View {
@@ -300,6 +370,8 @@ struct PracticeFlowView: View {
             currentStage = .guidedTrace
             letterStart = Date()
         }
+        resetSwipeState()
+        swipeTransitionOffset = 0
         loadTemplate()
     }
 
@@ -357,7 +429,17 @@ struct PracticeFlowView: View {
 
         if pass {
             failCounts[letterId] = 0
-            advanceToNextLetter()
+            if hasNextLetter {
+                canSwipeToAdvance = true
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    showSwipeHint = true
+                }
+            } else {
+                stageResults.removeAll()
+                swipeTransitionOffset = 0
+                resetSwipeState()
+                isSessionComplete = true
+            }
         } else {
             let failures = failCounts[letterId, default: 0] + 1
             failCounts[letterId] = failures
@@ -370,8 +452,11 @@ struct PracticeFlowView: View {
     }
 
     private func advanceToNextLetter() {
+        resetSwipeState()
+        swipeTransitionOffset = 0
+        swipeAnimationInFlight = false
         stageResults.removeAll()
-        if currentLetterIndex + 1 < letters.count {
+        if hasNextLetter {
             currentLetterIndex += 1
             furthestVisitedIndex = max(furthestVisitedIndex, currentLetterIndex)
             currentStage = .guidedTrace
@@ -383,6 +468,8 @@ struct PracticeFlowView: View {
     }
 
     private func resetForRetry() {
+        resetSwipeState()
+        swipeTransitionOffset = 0
         stageResults.removeAll()
         currentStage = .guidedTrace
         letterStart = Date()
@@ -395,6 +482,8 @@ struct PracticeFlowView: View {
         currentLetterIndex = 0
         furthestVisitedIndex = 0
         currentStage = .guidedTrace
+        resetSwipeState()
+        swipeTransitionOffset = 0
         stageResults.removeAll()
         letterStart = Date()
         loadTemplate()
@@ -406,6 +495,8 @@ struct PracticeFlowView: View {
         currentLetterIndex = index
         failCounts[currentLetterId] = 0
         currentStage = .guidedTrace
+        resetSwipeState()
+        swipeTransitionOffset = 0
         stageResults.removeAll()
         letterStart = Date()
         isSessionComplete = false
@@ -492,6 +583,26 @@ struct PracticeFlowView: View {
             return .pending
         }
         return outcome.aggregatedScore.total >= 80 ? .passed : .failed
+    }
+}
+
+private struct SwipeHintView: View {
+    var body: some View {
+        HStack(spacing: 10) {
+            Text("Swipe right to continue")
+                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                .foregroundColor(Color(red: 0.22, green: 0.34, blue: 0.52))
+            Image(systemName: "arrow.right")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(Color(red: 0.22, green: 0.34, blue: 0.52))
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
+        .background(
+            Capsule()
+                .fill(Color.white.opacity(0.92))
+        )
+        .shadow(color: Color.black.opacity(0.12), radius: 10, x: 0, y: 6)
     }
 }
 
@@ -614,96 +725,6 @@ private struct PracticeQuickSettingsSheet: View {
             return Color(red: 0.83, green: 0.91, blue: 1.0)
         case .fingerAndPencil:
             return Color(red: 0.87, green: 0.96, blue: 0.87)
-        }
-    }
-}
-
-private struct StageProgressBar: View {
-    let currentStage: PracticeStage
-    let stageResults: [PracticeStage: StageOutcome]
-
-    var body: some View {
-        HStack(spacing: 12) {
-            ForEach(PracticeStage.allCases, id: \.self) { stage in
-                StageChip(stage: stage, state: chipState(for: stage))
-                if stage != PracticeStage.allCases.last {
-                    Rectangle()
-                        .fill(Color.primary.opacity(0.12))
-                        .frame(width: 16, height: 1.5)
-                }
-            }
-        }
-        .padding(.horizontal, 24)
-    }
-
-    private func chipState(for stage: PracticeStage) -> StageBadgeState {
-        if let outcome = stageResults[stage] {
-            return outcome.score.total >= 80 ? .passed : .failed
-        }
-        if stage == currentStage {
-            return .current
-        }
-        if stage.rawValue < currentStage.rawValue {
-            return .pending
-        }
-        return .pending
-    }
-
-    private struct StageChip: View {
-        let stage: PracticeStage
-        let state: StageBadgeState
-
-        var body: some View {
-            Text(stage.displayName)
-                .font(.caption.weight(state == .current ? .semibold : .regular))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(backgroundColor)
-                .foregroundColor(foregroundColor)
-                .clipShape(Capsule())
-                .overlay(
-                    Capsule()
-                        .stroke(borderColor, lineWidth: state == .current ? 1.5 : 1)
-                )
-        }
-
-        private var backgroundColor: Color {
-            switch state {
-            case .passed:
-                return Color.green.opacity(0.18)
-            case .failed:
-                return Color.red.opacity(0.18)
-            case .current:
-                return Color.accentColor.opacity(0.14)
-            case .pending:
-                return Color.primary.opacity(0.05)
-            }
-        }
-
-        private var foregroundColor: Color {
-            switch state {
-            case .passed:
-                return Color.green.darker(by: 0.3)
-            case .failed:
-                return Color.red.darker(by: 0.2)
-            case .current:
-                return Color.accentColor
-            case .pending:
-                return Color.primary.opacity(0.6)
-            }
-        }
-
-        private var borderColor: Color {
-            switch state {
-            case .passed:
-                return Color.green.opacity(0.6)
-            case .failed:
-                return Color.red.opacity(0.6)
-            case .current:
-                return Color.accentColor.opacity(0.7)
-            case .pending:
-                return Color.primary.opacity(0.15)
-            }
         }
     }
 }
