@@ -1,11 +1,12 @@
 import SwiftUI
+import UIKit
 
 struct HomeView: View {
     @EnvironmentObject private var dataStore: PracticeDataStore
     @State private var showStreakHistory = false
     @State private var path = NavigationPath()
 
-    private let contributionWindow = 42
+    private let contributionWindow = 84
 
     private var today: ContributionDay {
         dataStore.todayContribution()
@@ -177,6 +178,32 @@ struct HomeView: View {
         return "\(lettersRemaining) \(letterLabel) left to close today's ring."
     }
 
+}
+
+private struct StreakCalendarSummary: View {
+    let weeks: [WeekColumn]
+    let goalDailySeconds: Int
+    let activeWeekdays: Set<Int>
+    let dayLabels: [String]
+
+    private let labelWidth: CGFloat = 36
+    private let spacing: CGFloat = 6
+
+    var body: some View {
+        let columns = max(weeks.count, 1)
+        let availableWidth = UIScreen.main.bounds.width - 56 // default horizontal padding (28 each side)
+        let effectiveWidth = max(availableWidth - labelWidth, 120)
+        let totalSpacing = spacing * CGFloat(max(columns - 1, 0))
+        let squareSize = max(18, (effectiveWidth - totalSpacing) / CGFloat(columns))
+
+        ContributionCalendarGrid(weeks: weeks,
+                                 goalDailySeconds: goalDailySeconds,
+                                 activeWeekdays: activeWeekdays,
+                                 dayLabels: dayLabels,
+                                 squareSize: squareSize)
+            .frame(maxWidth: .infinity)
+            .frame(height: squareSize * 7 + 34) // rows plus header spacing
+    }
 }
 
 private enum HomeRoute: Hashable {
@@ -381,10 +408,9 @@ private struct ProfileQuickActionsSheet: View {
     }
 
     private var overviewPage: some View {
-        ScrollView(showsIndicators: false) {
-            overviewContent
-        }
-        .frame(maxWidth: .infinity, alignment: .top)
+        overviewContent
+            .frame(maxWidth: .infinity, alignment: .top)
+            .frame(minHeight: 720, alignment: .top)
     }
 
     private var profileCenterPage: some View {
@@ -392,6 +418,7 @@ private struct ProfileQuickActionsSheet: View {
                           onBack: { withAnimation(.easeInOut(duration: 0.28)) { activePage = .overview } },
                           onClose: { dismiss() })
             .frame(maxWidth: .infinity, alignment: .top)
+            .frame(minHeight: 720, alignment: .top)
     }
 
     var body: some View {
@@ -563,35 +590,39 @@ private struct StreakHistorySheet: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 28) {
-                VStack(spacing: 12) {
-                    HStack(spacing: 16) {
-                        Image(systemName: "flame.fill")
-                            .font(.system(size: 40, weight: .bold))
-                            .foregroundColor(Color(red: 0.98, green: 0.58, blue: 0.25))
-                            .shadow(color: Color(red: 1.0, green: 0.72, blue: 0.32).opacity(0.4), radius: 16, x: 0, y: 10)
+                VStack(spacing: 10) {
+                    Text("Streaks")
+                        .font(.system(size: 30, weight: .heavy, design: .rounded))
+                        .foregroundColor(ScribbleColors.primary)
 
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("\(streak)")
-                                .font(.system(size: 48, weight: .black, design: .rounded))
-                                .foregroundColor(ScribbleColors.primary)
-                            Text("Current streak • \(streakLabel)")
-                                .font(.system(size: 16, weight: .semibold, design: .rounded))
-                                .foregroundColor(ScribbleColors.secondary.opacity(0.8))
-                        }
+                    Image(systemName: "flame.fill")
+                        .font(.system(size: 44, weight: .bold))
+                        .foregroundColor(Color(red: 0.98, green: 0.58, blue: 0.25))
+                        .shadow(color: Color(red: 1.0, green: 0.72, blue: 0.32).opacity(0.35), radius: 14, x: 0, y: 8)
 
-                        Spacer()
+                    VStack(spacing: 4) {
+                        Text("\(streak)")
+                            .font(.system(size: 52, weight: .black, design: .rounded))
+                            .foregroundColor(ScribbleColors.primary)
+                        Text(streakLabel.capitalized)
+                            .font(.system(size: 16, weight: .semibold, design: .rounded))
+                            .foregroundColor(ScribbleColors.secondary.opacity(0.8))
                     }
 
                     Text("Great job! Keep the flame burning by practicing on your goal days.")
-                        .font(.system(size: 18, weight: .medium, design: .rounded))
+                        .font(.system(size: 17, weight: .medium, design: .rounded))
                         .foregroundColor(ScribbleColors.secondary)
-                        .multilineTextAlignment(.leading)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxWidth: .infinity)
 
-                GoalTrackerCard(contributions: contributions, goal: goal)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.top, 8)
+                StreakCalendarSummary(weeks: twelveWeekColumns,
+                                      goalDailySeconds: goal.dailySeconds,
+                                      activeWeekdays: goal.activeWeekdayIndices,
+                                      dayLabels: dayLabels)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 4)
 
                 Button {
                     dismiss()
@@ -612,6 +643,34 @@ private struct StreakHistorySheet: View {
                 .ignoresSafeArea()
         )
         .accessibilityElement(children: .contain)
+    }
+
+    private var calendarWithMonday: Calendar {
+        var cal = Calendar(identifier: .gregorian)
+        cal.firstWeekday = 2
+        cal.minimumDaysInFirstWeek = 4
+        return cal
+    }
+
+    private var dayLabels: [String] { ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] }
+
+    private var twelveWeekColumns: [WeekColumn] {
+        let calendar = calendarWithMonday
+        let today = Date()
+        guard let currentWeekStart = calendar.dateInterval(of: .weekOfYear, for: today)?.start else {
+            return []
+        }
+
+        let contributionsByDay = Dictionary(uniqueKeysWithValues: contributions.map { ($0.date.stripTime(using: calendar), $0) })
+
+        return (0..<12).reversed().map { offset in
+            let start = calendar.date(byAdding: .weekOfYear, value: -offset, to: currentWeekStart) ?? currentWeekStart
+            let days: [ContributionDay?] = (0..<7).map { dayOffset in
+                let date = calendar.date(byAdding: .day, value: dayOffset, to: start) ?? start
+                return contributionsByDay[date.stripTime(using: calendar)]
+            }
+            return WeekColumn(startDate: start, days: days)
+        }
     }
 }
 
@@ -832,6 +891,12 @@ private struct ContributionCalendarGrid: View {
         let letters = max(day.secondsSpent / PracticeGoal.secondsPerLetter, 0)
         if day.didHitGoal { return "Goal met on \(dayFormatter.string(from: day.date))." }
         return "\(letters) of \(goalLetters) letters on \(dayFormatter.string(from: day.date))."
+    }
+}
+
+private extension Date {
+    func stripTime(using calendar: Calendar) -> Date {
+        calendar.startOfDay(for: self)
     }
 }
 

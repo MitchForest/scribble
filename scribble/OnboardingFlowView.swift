@@ -43,18 +43,18 @@ struct OnboardingFlowView: View {
     enum ExperienceLevel: String, CaseIterable, Identifiable {
         case beginner = "Beginner"
         case intermediate = "Intermediate"
-        case expert = "Expert"
+        case advanced = "Advanced"
 
         var id: String { rawValue }
 
         var description: String {
             switch self {
             case .beginner:
-                return "I'm new to cursive and want friendly helpers."
+                return "I'm brand new to cursive and ready to learn."
             case .intermediate:
-                return "I know some letters and want a good challenge."
-            case .expert:
-                return "I'm ready for tiny guides and fast feedback."
+                return "I know some letters and want to improve."
+            case .advanced:
+                return "I'm already advanced but want to become a pro."
             }
         }
 
@@ -62,7 +62,7 @@ struct OnboardingFlowView: View {
             switch self {
             case .beginner: return 45
             case .intermediate: return 80
-            case .expert: return 115
+            case .advanced: return 115
             }
         }
 
@@ -70,7 +70,7 @@ struct OnboardingFlowView: View {
             switch self {
             case .beginner: return .beginner
             case .intermediate: return .intermediate
-            case .expert: return .expert
+            case .advanced: return .expert
             }
         }
 
@@ -162,11 +162,23 @@ struct OnboardingFlowView: View {
             GeometryReader { proxy in
                 let step = currentStep
                 let verticalPadding = max(proxy.size.height * 0.06, 24)
-                let availableHeight = max(proxy.size.height - (verticalPadding * 2), 360)
+                let availableHeight = max(proxy.size.height - (verticalPadding * 2), 320)
                 let cardMinHeight = cardMinimumHeight(for: step)
-                let cardMaxHeight = min(max(availableHeight, cardMinHeight), cardMaximumHeight(for: step, containerHeight: proxy.size.height))
                 let verticalInsets = cardVerticalPadding(for: step)
                 let navigationSpacing = cardNavigationSpacing(for: step)
+                let intrinsicHeight = intrinsicCardHeight(for: step, verticalInsets: verticalInsets)
+                let cappedIntrinsic = min(cardMaximumHeight(for: step, containerHeight: proxy.size.height), intrinsicHeight)
+                let desiredHeight = min(cappedIntrinsic, availableHeight)
+                var cardHeight = max(cardMinHeight, desiredHeight)
+
+                switch step {
+                case .name:
+                    cardHeight = min(cardHeight, cardMinHeight + 24)
+                case .age:
+                    cardHeight = min(cardHeight, cardMinHeight + 28)
+                default:
+                    break
+                }
 
                 VStack {
                     Spacer(minLength: verticalPadding)
@@ -174,7 +186,7 @@ struct OnboardingFlowView: View {
                     VStack(spacing: navigationSpacing) {
                         cardContent(for: step,
                                     cardMinHeight: cardMinHeight,
-                                    cardMaxHeight: cardMaxHeight)
+                                    cardHeight: cardHeight)
                             .transition(.move(edge: .trailing).combined(with: .opacity))
 
                         navigationFloor(for: step)
@@ -183,7 +195,7 @@ struct OnboardingFlowView: View {
                     .padding(.vertical, verticalInsets)
                     .frame(maxWidth: 560)
                     .frame(minHeight: cardMinHeight,
-                           maxHeight: cardMaxHeight,
+                           maxHeight: cardHeight,
                            alignment: .top)
                     .background(
                         RoundedRectangle(cornerRadius: 36, style: .continuous)
@@ -264,13 +276,18 @@ struct OnboardingFlowView: View {
         }
     }
 
+    private func intrinsicCardHeight(for step: Step, verticalInsets: CGFloat) -> CGFloat {
+        preferredContentHeight(for: step) + navigationReservedHeight(for: step) + (verticalInsets * 2)
+    }
+
+
 
     private func cardMinimumHeight(for step: Step) -> CGFloat {
         switch step {
-        case .name: return 360
-        case .age: return 380
+        case .name: return 260
+        case .age: return 280
         case .gender: return 420
-        case .avatar: return 520
+        case .avatar: return 560
         case .skillLevel: return 440
         case .goals: return 500
         }
@@ -304,15 +321,15 @@ struct OnboardingFlowView: View {
         switch step {
         case .avatar, .goals: return 32
         case .skillLevel, .gender: return 30
-        case .age: return 28
-        case .name: return 26
+        case .age: return 18
+        case .name: return 16
         }
     }
 
     private func cardNavigationSpacing(for step: Step) -> CGFloat {
         switch step {
-        case .name: return 24
-        case .age: return 26
+        case .name: return 16
+        case .age: return 22
         case .gender: return 28
         case .skillLevel, .goals: return 30
         case .avatar: return 32
@@ -321,21 +338,21 @@ struct OnboardingFlowView: View {
 
     private func preferredContentHeight(for step: Step) -> CGFloat {
         switch step {
-        case .name: return 360
-        case .age: return 400
+        case .name: return 200
+        case .age: return 240
         case .gender: return 540
         case .skillLevel: return 540
-        case .avatar: return 640
-        case .goals: return 620
+        case .avatar: return 720
+        case .goals: return 700
         }
     }
 
     private func navigationReservedHeight(for step: Step) -> CGFloat {
         switch step {
         case .avatar: return 220
-        case .goals: return 210
+        case .goals: return 240
         case .skillLevel, .gender: return 200
-        case .age, .name: return 190
+        case .age, .name: return 120
         }
     }
 
@@ -350,11 +367,11 @@ struct OnboardingFlowView: View {
     @ViewBuilder
     private func cardContent(for step: Step,
                              cardMinHeight: CGFloat,
-                             cardMaxHeight: CGFloat) -> some View {
-        let effectiveMaxHeight = max(cardMaxHeight - navigationReservedHeight(for: step), cardMinHeight - 40)
+                             cardHeight: CGFloat) -> some View {
+        let effectiveMaxHeight = max(cardHeight - navigationReservedHeight(for: step), cardMinHeight - 40)
         let baseContent = stepView(for: step)
 
-        if shouldEnableScroll(for: step, cardMaxHeight: cardMaxHeight) {
+        if shouldEnableScroll(for: step, cardHeight: cardHeight) {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
                     baseContent
@@ -371,8 +388,8 @@ struct OnboardingFlowView: View {
         }
     }
 
-    private func shouldEnableScroll(for step: Step, cardMaxHeight: CGFloat) -> Bool {
-        preferredContentHeight(for: step) > cardMaxHeight
+    private func shouldEnableScroll(for step: Step, cardHeight: CGFloat) -> Bool {
+        preferredContentHeight(for: step) > cardHeight
     }
 
     private func prepareInitialState() {
@@ -720,12 +737,12 @@ private struct SkillLevelStepView: View {
     var body: some View {
         VStack(spacing: 24) {
             VStack(spacing: 10) {
-                Text("How much cursive have you practiced?")
+                Text("What's your skill level?")
                     .font(.system(size: 32, weight: .heavy, design: .rounded))
                     .foregroundColor(Palette.primary)
                     .multilineTextAlignment(.center)
 
-                Text("We’ll tailor your lessons based on how confident you feel.")
+                Text("We’ll tailor lessons and difficulty for you.")
                     .font(.system(size: 20, weight: .medium, design: .rounded))
                     .foregroundColor(Palette.secondary)
                     .multilineTextAlignment(.center)
@@ -749,7 +766,7 @@ private struct SkillLevelStepView: View {
         switch level {
         case .beginner: return "lightbulb.fill"
         case .intermediate: return "pencil.circle.fill"
-        case .expert: return "star.fill"
+        case .advanced: return "star.fill"
         }
     }
 
@@ -757,7 +774,7 @@ private struct SkillLevelStepView: View {
         switch level {
         case .beginner: return Color(red: 0.95, green: 0.89, blue: 1.0)
         case .intermediate: return Color(red: 0.86, green: 0.93, blue: 1.0)
-        case .expert: return Color(red: 1.0, green: 0.88, blue: 0.74)
+        case .advanced: return Color(red: 1.0, green: 0.88, blue: 0.74)
         }
     }
 }
@@ -772,7 +789,7 @@ private struct GoalsStepView: View {
     var body: some View {
         VStack(spacing: 28) {
             VStack(spacing: 10) {
-                Text("Set your practice plan")
+                Text("Set your goals")
                     .font(.system(size: 32, weight: .heavy, design: .rounded))
                     .foregroundColor(Palette.primary)
                     .multilineTextAlignment(.center)
