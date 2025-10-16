@@ -14,6 +14,9 @@ final class FreePracticeViewModel: ObservableObject {
     @Published private(set) var timeline: [LetterTimelineItem] = []
     @Published private(set) var letterStates: [LetterState] = []
     @Published private(set) var currentLetterIndex: Int = 0
+    @Published private(set) var totalPractiseableLetters: Int = 0
+
+    private var practiseableIndices: [Int] = []
 
     init(initialText: String = "a a a") {
         self.targetText = initialText
@@ -22,6 +25,14 @@ final class FreePracticeViewModel: ObservableObject {
 
     var currentLetter: LetterTimelineItem? {
         timeline[safe: currentLetterIndex]
+    }
+
+    var completedLetterCount: Int {
+        practiseableIndices.reduce(into: 0) { count, index in
+            if letterStates[safe: index]?.isComplete == true {
+                count += 1
+            }
+        }
     }
 
     func replay(at index: Int) {
@@ -45,10 +56,12 @@ final class FreePracticeViewModel: ObservableObject {
         letterStates[currentLetterIndex].hadWarning = true
     }
 
-    func markLetterCompleted() {
-        guard letterStates.indices.contains(currentLetterIndex) else { return }
+    @discardableResult
+    func markLetterCompleted() -> Bool {
+        guard letterStates.indices.contains(currentLetterIndex) else { return false }
         letterStates[currentLetterIndex].isComplete = true
         letterStates[currentLetterIndex].hadWarning = false
+        return completedLetterCount >= totalPractiseableLetters && totalPractiseableLetters > 0
     }
 
     func advanceToNextPractiseableLetter() {
@@ -86,6 +99,11 @@ final class FreePracticeViewModel: ObservableObject {
             }
             return state
         }
+
+        practiseableIndices = items.enumerated().compactMap { index, item in
+            item.isPractiseable ? index : nil
+        }
+        totalPractiseableLetters = practiseableIndices.count
 
         if let firstPractiseable = items.firstIndex(where: { $0.isPractiseable }) {
             currentLetterIndex = firstPractiseable

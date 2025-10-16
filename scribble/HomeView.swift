@@ -7,6 +7,7 @@ struct HomeView: View {
     @State private var path = NavigationPath()
 
     private let contributionWindow = 84
+    private let units = PracticeLessonLibrary.units
 
     private var today: ContributionDay {
         dataStore.todayContribution()
@@ -66,24 +67,24 @@ struct HomeView: View {
         NavigationStack(path: $path) {
             ZStack {
                 HomeBackground()
-                GeometryReader { proxy in
-                    VStack(spacing: 36) {
+                ScrollView {
+                    VStack(spacing: 32) {
                         header
-                        Spacer(minLength: proxy.size.height * 0.08)
-                        startButton
-                        Spacer()
+                        lessonSections
                     }
                     .padding(.horizontal, 28)
-                    .padding(.top, 32)
-                    .padding(.bottom, proxy.size.height * 0.08)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .padding(.vertical, 32)
                 }
             }
             .navigationDestination(for: HomeRoute.self) { route in
                 switch route {
-                case .freePractice:
-                    FreePracticeView()
-                        .environmentObject(dataStore)
+                case .practiceLesson(let lessonID):
+                    if let lesson = PracticeLessonLibrary.lesson(for: lessonID) {
+                        LessonPracticeView(lesson: lesson)
+                            .environmentObject(dataStore)
+                    } else {
+                        Text("Lesson unavailable")
+                    }
                 }
             }
             .sheet(isPresented: $showStreakHistory) {
@@ -129,41 +130,6 @@ struct HomeView: View {
         .accessibilityElement(children: .combine)
     }
 
-    private var startButton: some View {
-        Button {
-            startPractice()
-        } label: {
-            VStack(spacing: 10) {
-                Image(systemName: "pencil.and.outline")
-                    .font(.system(size: 46, weight: .bold))
-                Text("Practice")
-                    .font(.system(size: 26, weight: .heavy, design: .rounded))
-            }
-            .foregroundStyle(Color(red: 0.26, green: 0.18, blue: 0.07))
-            .frame(width: 240, height: 140)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(
-                        LinearGradient(colors: [
-                            Color(red: 1.0, green: 0.86, blue: 0.44),
-                            Color(red: 1.0, green: 0.74, blue: 0.3)
-                        ], startPoint: .topLeading, endPoint: .bottomTrailing)
-                    )
-            )
-            .overlay(
-                Capsule(style: .continuous)
-                    .stroke(Color.white.opacity(0.35), lineWidth: 4)
-            )
-            .shadow(color: Color.black.opacity(0.15), radius: 16, x: 0, y: 10)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Start Practice")
-    }
-
-    private func startPractice() {
-        path.append(HomeRoute.freePractice)
-    }
-
     private var progressSubtitle: String {
         guard lettersGoalPerDay > 0 else {
             return "Set a goal to fill your magic ring."
@@ -176,6 +142,31 @@ struct HomeView: View {
         let lettersRemaining = remainingLetters
         let letterLabel = lettersRemaining == 1 ? "letter" : "letters"
         return "\(lettersRemaining) \(letterLabel) left to close today's ring."
+    }
+
+    private var lessonSections: some View {
+        LazyVStack(alignment: .leading, spacing: 36) {
+            ForEach(units) { unit in
+                VStack(alignment: .leading, spacing: 20) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(unit.title)
+                            .font(.system(size: 26, weight: .bold, design: .rounded))
+                            .foregroundColor(Color(red: 0.25, green: 0.34, blue: 0.55))
+                        Text(unit.description)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundColor(Color(red: 0.45, green: 0.54, blue: 0.72))
+                    }
+
+                    LessonGrid(unit: unit,
+                               progressProvider: { lesson in
+                                   dataStore.lessonProgress(for: lesson)
+                               },
+                               onSelect: { lesson in
+                                   path.append(HomeRoute.practiceLesson(lesson.id))
+                               })
+                }
+            }
+        }
     }
 
 }
@@ -207,7 +198,101 @@ private struct StreakCalendarSummary: View {
 }
 
 private enum HomeRoute: Hashable {
-    case freePractice
+    case practiceLesson(PracticeLesson.ID)
+}
+
+private struct LessonGrid: View {
+    let unit: PracticeUnit
+    let progressProvider: (PracticeLesson) -> PracticeDataStore.LessonProgress
+    let onSelect: (PracticeLesson) -> Void
+
+    private let columns: [GridItem] = [
+        GridItem(.adaptive(minimum: 220, maximum: 280), spacing: 22)
+    ]
+
+    var body: some View {
+        LazyVGrid(columns: columns, spacing: 22) {
+            ForEach(unit.lessons.sorted(by: { $0.order < $1.order })) { lesson in
+                LessonCard(lesson: lesson,
+                           progress: progressProvider(lesson),
+                           onSelect: { onSelect(lesson) })
+            }
+        }
+    }
+}
+
+private struct LessonCard: View {
+    let lesson: PracticeLesson
+    let progress: PracticeDataStore.LessonProgress
+    let onSelect: () -> Void
+
+    private var progressText: String {
+        "\(min(progress.completed, progress.total))/\(max(progress.total, 1))"
+    }
+
+    var body: some View {
+        Button(action: onSelect) {
+            ZStack(alignment: .topTrailing) {
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(Color.white.opacity(0.92))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 28, style: .continuous)
+                            .stroke(Color.white.opacity(0.45), lineWidth: 1.5)
+                    )
+                    .shadow(color: Color.black.opacity(0.08), radius: 18, x: 0, y: 12)
+
+                VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(lesson.title)
+                            .font(.system(size: 18, weight: .semibold, design: .rounded))
+                            .foregroundColor(Color(red: 0.28, green: 0.38, blue: 0.6))
+                        Text(lesson.subtitle)
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(Color(red: 0.52, green: 0.6, blue: 0.78))
+                    }
+
+                    Text(lesson.cardGlyph)
+                        .font(.system(size: lesson.cardGlyph.count > 12 ? 16 : 48,
+                                      weight: .bold,
+                                      design: lesson.cardGlyph.count > 6 ? .rounded : .serif))
+                        .foregroundColor(Color(red: 0.22, green: 0.32, blue: 0.54))
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(3)
+                        .minimumScaleFactor(0.6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Spacer()
+                }
+                .padding(24)
+
+                LessonProgressChip(text: progressText)
+                    .padding(16)
+            }
+        }
+        .buttonStyle(.plain)
+        .frame(minHeight: 190)
+    }
+}
+
+private struct LessonProgressChip: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.caption.weight(.heavy))
+            .foregroundColor(Color(red: 0.26, green: 0.36, blue: 0.58))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(Color.white.opacity(0.95))
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .stroke(Color(red: 0.66, green: 0.74, blue: 0.9), lineWidth: 1.2)
+            )
+            .shadow(color: Color.black.opacity(0.1), radius: 6, x: 0, y: 4)
+    }
 }
 
 private struct HomeBackground: View {
@@ -576,7 +661,7 @@ struct AvatarImage: View {
     }
 }
 
-private struct StreakHistorySheet: View {
+struct StreakHistorySheet: View {
     let streak: Int
     let contributions: [ContributionDay]
     let goal: PracticeGoal

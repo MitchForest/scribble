@@ -477,6 +477,12 @@ struct LetterMasteryRecord: Codable, Equatable {
     }
 }
 
+struct LessonProgressRecord: Codable, Equatable {
+    let lessonId: PracticeLesson.ID
+    var completedLetters: Int
+    var updatedAt: Date
+}
+
 struct PracticeDataSnapshot: Codable {
     var attempts: [LetterAttemptRecord]
     var mastery: [LetterMasteryRecord]
@@ -485,6 +491,7 @@ struct PracticeDataSnapshot: Codable {
     var flowOutcomes: [LetterFlowOutcome]?
     var profile: UserProfile?
     var xpEvents: [XPEvent]?
+    var lessonProgress: [LessonProgressRecord]?
 }
 
 struct UnlockEvent: Equatable {

@@ -169,16 +169,10 @@ struct OnboardingFlowView: View {
                 let intrinsicHeight = intrinsicCardHeight(for: step, verticalInsets: verticalInsets)
                 let cappedIntrinsic = min(cardMaximumHeight(for: step, containerHeight: proxy.size.height), intrinsicHeight)
                 let desiredHeight = min(cappedIntrinsic, availableHeight)
-                var cardHeight = max(cardMinHeight, desiredHeight)
-
-                switch step {
-                case .name:
-                    cardHeight = min(cardHeight, cardMinHeight + 24)
-                case .age:
-                    cardHeight = min(cardHeight, cardMinHeight + 28)
-                default:
-                    break
-                }
+                let candidateHeight = max(cardMinHeight, desiredHeight)
+                let cardHeight = adjustedCardHeight(for: step,
+                                                    candidate: candidateHeight,
+                                                    minimum: cardMinHeight)
 
                 VStack {
                     Spacer(minLength: verticalPadding)
@@ -225,23 +219,22 @@ struct OnboardingFlowView: View {
 
     @ViewBuilder
     private func stepView(for step: Step) -> some View {
-        switch step {
-        case .name:
+        if step == .name {
             NameStepView(name: $name,
                          isFocused: $nameFieldFocused,
                          onSubmit: advanceIfPossible)
-        case .gender:
+        } else if step == .gender {
             GenderStepView(gender: $gender)
-        case .age:
+        } else if step == .age {
             AgeStepView(age: $age, range: ageRange)
-        case .avatar:
+        } else if step == .avatar {
             AvatarStepView(seeds: avatarOptions,
                            selectedSeed: $selectedAvatarSeed,
                            gender: gender,
                            onShuffle: { regenerateAvatarOptions(for: gender, force: true) })
-        case .skillLevel:
+        } else if step == .skillLevel {
             SkillLevelStepView(experience: $experience)
-        case .goals:
+        } else {
             GoalsStepView(selectedDays: $selectedDays,
                           lettersPerDay: $lettersPerDay,
                           goalSeconds: goalSeconds)
@@ -315,6 +308,19 @@ struct OnboardingFlowView: View {
         }
         let computed = containerHeight * factor
         return min(max(computed, cardMinimumHeight(for: step) + 40), cap)
+    }
+
+    private func adjustedCardHeight(for step: Step,
+                                    candidate: CGFloat,
+                                    minimum: CGFloat) -> CGFloat {
+        switch step {
+        case .name:
+            return min(candidate, minimum + 24)
+        case .age:
+            return min(candidate, minimum + 28)
+        default:
+            return candidate
+        }
     }
 
     private func cardVerticalPadding(for step: Step) -> CGFloat {

@@ -1,426 +1,257 @@
 import SwiftUI
 import PencilKit
 
-struct FreePracticeView: View {
+struct LessonPracticeView: View {
     @EnvironmentObject private var dataStore: PracticeDataStore
-    private let catalog: [PracticeCategory]
+    @State private var showStreakHistory = false
+    @State private var currentIndex: Int
+    @State private var boardKey = UUID()
 
-    @State private var expandedCategoryID: PracticeCategory.ID?
-    @State private var selectedCategory: PracticeCategory
-    @State private var selectedLesson: PracticeLesson
+    private let lessons: [PracticeLesson]
+    private let unit: PracticeUnit?
 
-    @StateObject private var topViewModel: FreePracticeViewModel
-    @StateObject private var bottomViewModel: FreePracticeViewModel
-    @State private var topAnimationToken = 0
-    @State private var bottomAnimationToken = 0
-
-    private var difficultyMultiplier: Double {
-        switch dataStore.settings.difficulty {
-        case .beginner: return 1.4
-        case .intermediate: return 1.0
-        case .expert: return 0.8
-        }
+    init(lesson: PracticeLesson) {
+        let unit = PracticeLessonLibrary.unit(for: lesson.unitId)
+        self.unit = unit
+        let ordered = unit?.lessons.sorted(by: { $0.order < $1.order }) ?? [lesson]
+        self.lessons = ordered
+        let startIndex = ordered.firstIndex(where: { $0.id == lesson.id }) ?? 0
+        _currentIndex = State(initialValue: startIndex)
     }
 
-    private let secondsPerLetter: Int = 5
-
-    private var activeTopLine: PracticeLessonLine {
-        selectedLesson.lines.first ?? PracticeCatalog.fallbackLine
+    private var currentLesson: PracticeLesson {
+        lessons[currentIndex]
     }
 
-    private var activeBottomLine: PracticeLessonLine {
-        selectedLesson.lines.dropFirst().first ?? PracticeCatalog.fallbackLine
+    private var nextLessonIndex: Int {
+        guard !lessons.isEmpty else { return 0 }
+        return (currentIndex + 1) % lessons.count
     }
 
-    init() {
-        let categories = PracticeCatalog.defaultCategories.isEmpty
-            ? [PracticeCatalog.fallbackCategory]
-            : PracticeCatalog.defaultCategories
-        self.catalog = categories
+    private var streak: Int {
+        dataStore.currentStreak()
+    }
 
-        let category = categories.first ?? PracticeCatalog.fallbackCategory
-        let lesson = category.lessons.first ?? PracticeCatalog.fallbackLesson
-        let topLine = lesson.lines.first ?? PracticeCatalog.fallbackLine
-        let bottomLine = lesson.lines.dropFirst().first ?? PracticeCatalog.fallbackLine
-
-        _selectedCategory = State(initialValue: category)
-        _selectedLesson = State(initialValue: lesson)
-        _expandedCategoryID = State(initialValue: category.id)
-        _topViewModel = StateObject(wrappedValue: FreePracticeViewModel(initialText: topLine.text))
-        _bottomViewModel = StateObject(wrappedValue: FreePracticeViewModel(initialText: bottomLine.text))
+    private var lessonProgress: PracticeDataStore.LessonProgress {
+        dataStore.lessonProgress(for: currentLesson)
     }
 
     var body: some View {
-        let today = dataStore.todayContribution()
-        let guidesEnabled = dataStore.settings.difficulty.profile.showsGuides
-
         ZStack {
             PracticeBackground()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 28) {
-                    PracticeTopBar(progress: dataStore.dailyProgressRatio(),
-                                   today: today,
-                                   goal: dataStore.profile.goal,
-                                   seed: dataStore.profile.avatarSeed,
-                                   difficulty: dataStore.settings.difficulty,
-                                   streak: dataStore.currentStreak(),
-                                   onDifficultyChange: { dataStore.updateDifficulty($0) })
-
-                    lessonPicker
-
-                    Text(selectedLesson.title)
-                        .font(.system(size: 26, weight: .bold, design: .rounded))
-                        .foregroundColor(Color(red: 0.3, green: 0.42, blue: 0.63))
-
-                    VStack(spacing: 38) {
-                        practiceLineSection(line: activeTopLine,
-                                            viewModel: topViewModel,
-                                            animationToken: $topAnimationToken,
-                                            guidesEnabled: guidesEnabled)
-
-                        practiceLineSection(line: activeBottomLine,
-                                            viewModel: bottomViewModel,
-                                            animationToken: $bottomAnimationToken,
-                                            guidesEnabled: guidesEnabled)
-                    }
-                }
-                .padding(.horizontal, 28)
-                .padding(.top, 28)
-                .padding(.bottom, 44)
+            VStack(alignment: .leading, spacing: 28) {
+                header
+                lessonHeader
+                lessonBoard
+                Spacer()
             }
+            .padding(.horizontal, 36)
+            .padding(.vertical, 34)
         }
-        .onAppear {
-            topViewModel.resumeIfNeeded()
-            bottomViewModel.resumeIfNeeded()
-        }
-        .onChange(of: topViewModel.currentLetterIndex) { _ in
-            topAnimationToken &+= 1
-        }
-        .onChange(of: topViewModel.targetText) { _ in
-            topAnimationToken &+= 1
-        }
-        .onChange(of: bottomViewModel.currentLetterIndex) { _ in
-            bottomAnimationToken &+= 1
-        }
-        .onChange(of: bottomViewModel.targetText) { _ in
-            bottomAnimationToken &+= 1
+        .toolbar(.hidden, for: .navigationBar)
+        .sheet(isPresented: $showStreakHistory) {
+            if #available(iOS 16.0, *) {
+                StreakHistorySheet(streak: streak,
+                                   contributions: dataStore.contributions(forDays: 84),
+                                   goal: dataStore.profile.goal)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+            } else {
+                StreakHistorySheet(streak: streak,
+                                   contributions: dataStore.contributions(forDays: 84),
+                                   goal: dataStore.profile.goal)
+            }
         }
     }
 
-    private func awardLetterTime(for letter: LetterTimelineItem) {
+    private var header: some View {
+        HStack(alignment: .center, spacing: 20) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Scribble")
+                    .font(.system(size: 44, weight: .black, design: .serif))
+                    .italic()
+                    .foregroundStyle(Color(red: 0.24, green: 0.33, blue: 0.57))
+                Text("Focused handwriting practice")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color(red: 0.48, green: 0.56, blue: 0.74))
+            }
+            Spacer()
+            HStack(spacing: 16) {
+                StreakBadge(streak: streak) {
+                    showStreakHistory = true
+                }
+                ProfileMenuButton(seed: dataStore.profile.avatarSeed,
+                                  progress: dataStore.dailyProgressRatio(),
+                                  today: dataStore.todayContribution(),
+                                  goal: dataStore.profile.goal,
+                                  difficulty: dataStore.settings.difficulty,
+                                  streak: streak,
+                                  onDifficultyChange: { dataStore.updateDifficulty($0) })
+            }
+        }
+    }
+
+    private var lessonHeader: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let unit {
+                Text(unit.title.uppercased())
+                    .font(.caption.weight(.heavy))
+                    .foregroundColor(Color(red: 0.54, green: 0.62, blue: 0.78))
+                    .kerning(1.1)
+            }
+            Text(currentLesson.title)
+                .font(.system(size: 30, weight: .heavy, design: .rounded))
+                .foregroundColor(Color(red: 0.28, green: 0.4, blue: 0.63))
+            Text(currentLesson.subtitle)
+                .font(.subheadline.weight(.semibold))
+                .foregroundColor(Color(red: 0.48, green: 0.56, blue: 0.74))
+            LessonProgressChip(text: "\(min(lessonProgress.completed, lessonProgress.total)) / \(max(lessonProgress.total, 1))")
+        }
+    }
+
+    private var lessonBoard: some View {
+        ZStack {
+            LessonPracticeBoard(lesson: currentLesson,
+                                settings: dataStore.settings,
+                                allowFingerInput: dataStore.settings.inputPreference.allowsFingerInput,
+                                onLetterAward: { award in
+                                    recordLetterXP(for: award)
+                                },
+                                onProgressChanged: { completed, total in
+                                    dataStore.updateLessonProgress(for: currentLesson,
+                                                                   completedLetters: completed,
+                                                                   totalLetters: total)
+                                },
+                                onLessonComplete: {
+                                    advanceToNextLesson()
+                                })
+            .id(boardKey)
+            .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity),
+                                    removal: .move(edge: .leading).combined(with: .opacity)))
+        }
+        .animation(.easeInOut(duration: 0.45), value: boardKey)
+    }
+
+    private func advanceToNextLesson() {
+        guard !lessons.isEmpty else { return }
+        withAnimation(.easeInOut(duration: 0.45)) {
+            currentIndex = nextLessonIndex
+            boardKey = UUID()
+        }
+    }
+
+    private func recordLetterXP(for letter: LetterTimelineItem) {
         guard let letterId = letter.letterId else { return }
-        let adjusted = Int(Double(secondsPerLetter) * difficultyMultiplier)
+        let multiplier: Double
+        switch dataStore.settings.difficulty {
+        case .beginner: multiplier = 1.4
+        case .intermediate: multiplier = 1.0
+        case .expert: multiplier = 0.8
+        }
+        let baseSeconds = 5
+        let adjusted = Int(Double(baseSeconds) * multiplier)
         dataStore.addWritingSeconds(max(adjusted, 1),
                                     category: .practiceLine,
                                     letterId: letterId)
     }
-
-    @ViewBuilder
-    private var lessonPicker: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            ForEach(catalog) { category in
-                VStack(alignment: .leading, spacing: 12) {
-                    Button {
-                        toggleCategory(category)
-                    } label: {
-                        HStack {
-                            Text(category.title)
-                                .font(.system(size: 24, weight: .bold, design: .rounded))
-                                .foregroundColor(category.id == selectedCategory.id
-                                                 ? Color(red: 0.32, green: 0.42, blue: 0.6)
-                                                 : Color(red: 0.38, green: 0.48, blue: 0.68))
-                            Spacer()
-                            Image(systemName: expandedCategoryID == category.id ? "chevron.up" : "chevron.down")
-                                .foregroundColor(Color(red: 0.48, green: 0.58, blue: 0.78))
-                        }
-                        .padding(.vertical, 16)
-                        .padding(.horizontal, 20)
-                        .background(
-                            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                                .fill(category.id == selectedCategory.id
-                                      ? Color.white.opacity(0.96)
-                                      : Color.white.opacity(0.82))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                                .stroke(Color.white.opacity(0.45), lineWidth: 1)
-                        )
-                    }
-                    .buttonStyle(.plain)
-
-                    if expandedCategoryID == category.id {
-                        VStack(alignment: .leading, spacing: 10) {
-                            ForEach(category.lessons) { lesson in
-                                Button {
-                                    selectLesson(lesson, in: category)
-                                } label: {
-                                    HStack {
-                                        Text(lesson.title)
-                                            .font(.system(size: 18, weight: .semibold, design: .rounded))
-                                            .foregroundColor(lesson.id == selectedLesson.id
-                                                             ? Color(red: 0.32, green: 0.42, blue: 0.6)
-                                                             : Color(red: 0.47, green: 0.55, blue: 0.72))
-                                        Spacer()
-                                        if lesson.id == selectedLesson.id {
-                                            Image(systemName: "checkmark.circle.fill")
-                                                .foregroundColor(Color(red: 1.0, green: 0.7, blue: 0.36))
-                                                .imageScale(.medium)
-                                        }
-                                    }
-                                    .padding(.vertical, 12)
-                                    .padding(.horizontal, 16)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                            .fill(lesson.id == selectedLesson.id
-                                                  ? Color.white.opacity(0.96)
-                                                  : Color.white.opacity(0.7))
-                                    )
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                        .padding(.leading, 12)
-                    }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func practiceLineSection(line: PracticeLessonLine,
-                                     viewModel: FreePracticeViewModel,
-                                     animationToken: Binding<Int>,
-                                     guidesEnabled: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(line.title)
-                .font(.system(size: 22, weight: .bold, design: .rounded))
-                .foregroundColor(Color(red: 0.28, green: 0.4, blue: 0.62))
-
-            PracticeBoard(viewModel: viewModel,
-                          settings: dataStore.settings,
-                          guidesEnabled: guidesEnabled,
-                          animationToken: animationToken,
-                          awardLetterTime: awardLetterTime,
-                          registerWarning: { viewModel.markWarningForCurrentLetter() })
-                .frame(maxHeight: .infinity)
-        }
-    }
-
-    private func toggleCategory(_ category: PracticeCategory) {
-        if expandedCategoryID == category.id {
-            expandedCategoryID = nil
-        } else {
-            expandedCategoryID = category.id
-            if selectedCategory.id != category.id {
-                selectLesson(category.lessons.first ?? PracticeCatalog.fallbackLesson, in: category)
-            }
-        }
-    }
-
-    private func selectLesson(_ lesson: PracticeLesson, in category: PracticeCategory) {
-        selectedCategory = category
-        selectedLesson = lesson
-        expandedCategoryID = category.id
-        applyLesson(lesson)
-    }
-
-    private func applyLesson(_ lesson: PracticeLesson) {
-        let topLine = lesson.lines.first ?? PracticeCatalog.fallbackLine
-        let bottomLine = lesson.lines.dropFirst().first ?? PracticeCatalog.fallbackLine
-
-        topViewModel.targetText = topLine.text
-        bottomViewModel.targetText = bottomLine.text
-        topViewModel.resumeIfNeeded()
-        bottomViewModel.resumeIfNeeded()
-        topAnimationToken &+= 1
-        bottomAnimationToken &+= 1
-    }
 }
 
-private struct PracticeBackground: View {
-    var body: some View {
-        LinearGradient(
-            colors: [
-                Color(red: 0.97, green: 0.99, blue: 1.0),
-                Color(red: 0.95, green: 0.95, blue: 1.0)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-        .ignoresSafeArea()
-    }
-}
-
-private struct PracticeTopBar: View {
-    let progress: Double
-    let today: ContributionDay
-    let goal: PracticeGoal
-    let seed: String
-    let difficulty: PracticeDifficulty
+private struct StreakBadge: View {
     let streak: Int
-    let onDifficultyChange: (PracticeDifficulty) -> Void
-
-    private var statusLine: String {
-        guard goal.dailySeconds > 0 else { return "Set a goal to start filling your ring." }
-        let goalLetters = max(goal.dailySeconds / PracticeGoal.secondsPerLetter, 1)
-        let lettersSoFar = max(today.secondsSpent / PracticeGoal.secondsPerLetter, 0)
-        let remainingLetters = max(goalLetters - lettersSoFar, 0)
-        guard remainingLetters > 0 else { return "Today's letter goal met! 🎉" }
-        let label = remainingLetters == 1 ? "letter" : "letters"
-        return "\(remainingLetters) \(label) left to sparkle today."
-    }
-
-    private var streakSubtitle: String {
-        let label = streak == 1 ? "day" : "days"
-        return "Streak: \(streak) \(label)"
-    }
+    let action: () -> Void
 
     var body: some View {
-        HStack(alignment: .center, spacing: 18) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Scribble")
-                    .font(.system(size: 40, weight: .black, design: .serif))
-                    .italic()
-                    .foregroundStyle(Color(red: 0.24, green: 0.33, blue: 0.57))
-                Text(statusLine)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Color(red: 0.46, green: 0.55, blue: 0.72))
-                Text(streakSubtitle)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color(red: 0.46, green: 0.55, blue: 0.72))
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: "flame.fill")
+                    .font(.system(size: 24, weight: .bold))
+                    .foregroundColor(Color(red: 0.98, green: 0.58, blue: 0.25))
+                    .shadow(color: Color(red: 1.0, green: 0.75, blue: 0.4).opacity(0.35), radius: 8, x: 0, y: 6)
+                Text("\(streak)")
+                    .font(.system(size: 22, weight: .heavy, design: .rounded))
+                    .foregroundColor(ScribbleColors.primary)
             }
-            Spacer()
-            ProfileMenuButton(seed: seed,
-                              progress: progress,
-                              today: today,
-                              goal: goal,
-                              difficulty: difficulty,
-                              streak: streak,
-                              onDifficultyChange: onDifficultyChange)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(Color.white.opacity(0.92))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .stroke(Color.white.opacity(0.4), lineWidth: 1.5)
+            )
+            .shadow(color: Color.black.opacity(0.12), radius: 14, x: 0, y: 8)
         }
+        .buttonStyle(.plain)
     }
 }
 
-// MARK: - Lesson Catalog
-
-private struct PracticeLessonLine: Identifiable, Equatable {
-    let id = UUID()
-    let title: String
+private struct LessonProgressChip: View {
     let text: String
-}
 
-private struct PracticeLesson: Identifiable, Equatable {
-    let id = UUID()
-    let title: String
-    let lines: [PracticeLessonLine]
-}
-
-private struct PracticeCategory: Identifiable, Equatable {
-    let id = UUID()
-    let title: String
-    let lessons: [PracticeLesson]
-}
-
-private enum PracticeCatalog {
-    static let fallbackLine = PracticeLessonLine(title: "Practice", text: "a a a a a")
-    static let fallbackLesson = PracticeLesson(title: "Starter", lines: [
-        PracticeLessonLine(title: "Uppercase A", text: "A A A A A"),
-        PracticeLessonLine(title: "Lowercase a", text: "a a a a a")
-    ])
-    static let fallbackCategory = PracticeCategory(title: "Letters", lessons: [fallbackLesson])
-
-    static let defaultCategories: [PracticeCategory] = [
-        PracticeCategory(title: "Letters", lessons: [
-            PracticeLesson(title: "Letter A", lines: [
-                PracticeLessonLine(title: "Uppercase A", text: "A A A A A"),
-                PracticeLessonLine(title: "Lowercase a", text: "a a a a a")
-            ]),
-            PracticeLesson(title: "Letter B", lines: [
-                PracticeLessonLine(title: "Uppercase B", text: "B B B B B"),
-                PracticeLessonLine(title: "Lowercase b", text: "b b b b b")
-            ]),
-            PracticeLesson(title: "Letter C", lines: [
-                PracticeLessonLine(title: "Uppercase C", text: "C C C C C"),
-                PracticeLessonLine(title: "Lowercase c", text: "c c c c c")
-            ])
-        ]),
-        PracticeCategory(title: "Alphabet", lessons: [
-            PracticeLesson(title: "A – E", lines: [
-                PracticeLessonLine(title: "Uppercase Set", text: "A B C D E"),
-                PracticeLessonLine(title: "Lowercase Set", text: "a b c d e")
-            ]),
-            PracticeLesson(title: "F – J", lines: [
-                PracticeLessonLine(title: "Uppercase Set", text: "F G H I J"),
-                PracticeLessonLine(title: "Lowercase Set", text: "f g h i j")
-            ]),
-            PracticeLesson(title: "K – O", lines: [
-                PracticeLessonLine(title: "Uppercase Set", text: "K L M N O"),
-                PracticeLessonLine(title: "Lowercase Set", text: "k l m n o")
-            ])
-        ]),
-        PracticeCategory(title: "Sentences", lessons: [
-            PracticeLesson(title: "Morning Cheer", lines: [
-                PracticeLessonLine(title: "Line 1", text: "Rise and glow with joy"),
-                PracticeLessonLine(title: "Line 2", text: "Take a breath and begin")
-            ]),
-            PracticeLesson(title: "Kind Wishes", lines: [
-                PracticeLessonLine(title: "Line 1", text: "Share a smile with a friend"),
-                PracticeLessonLine(title: "Line 2", text: "Write a note to brighten days")
-            ]),
-            PracticeLesson(title: "Little Adventure", lines: [
-                PracticeLessonLine(title: "Line 1", text: "Pack a snack for the trail"),
-                PracticeLessonLine(title: "Line 2", text: "Follow the sun over hills")
-            ])
-        ])
-    ]
-}
-
-private enum LetterStatus {
-    case completed
-    case current
-    case needsWork
-    case upcoming
-
-    var fillColor: Color {
-        switch self {
-        case .completed:
-            return Color(red: 0.45, green: 0.74, blue: 0.51)
-        case .current:
-            return Color(red: 1.0, green: 0.82, blue: 0.36)
-        case .needsWork:
-            return Color(red: 0.93, green: 0.43, blue: 0.39)
-        case .upcoming:
-            return Color(red: 0.8, green: 0.86, blue: 0.94)
-        }
+    var body: some View {
+        Text(text)
+            .font(.caption.weight(.heavy))
+            .foregroundColor(Color(red: 0.26, green: 0.36, blue: 0.58))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(Color.white.opacity(0.95))
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .stroke(Color(red: 0.66, green: 0.74, blue: 0.9), lineWidth: 1.2)
+            )
+            .shadow(color: Color.black.opacity(0.08), radius: 5, x: 0, y: 3)
     }
 }
 
 // MARK: - Practice Board
 
-private struct PracticeBoard: View {
-    @ObservedObject var viewModel: FreePracticeViewModel
+private struct LessonPracticeBoard: View {
+    let lesson: PracticeLesson
     let settings: UserSettings
-    let guidesEnabled: Bool
-    @Binding var animationToken: Int
-    let awardLetterTime: (LetterTimelineItem) -> Void
-    let registerWarning: () -> Void
+    let allowFingerInput: Bool
+    let onLetterAward: (LetterTimelineItem) -> Void
+    let onProgressChanged: (Int, Int) -> Void
+    let onLessonComplete: () -> Void
 
+    @StateObject private var viewModel: FreePracticeViewModel
+    @State private var animationToken = 0
     @State private var feedback: FeedbackMessage?
+    @State private var completionGuard = false
 
-    private let positiveMessages = ["Great job!", "Awesome!", "Nice stroke!", "Super work!", "You got it!"]
-    private let retryMessages = ["Try again!", "Give it another go!", "Reset and retry!", "Almost!", "Keep practicing!"]
+    init(lesson: PracticeLesson,
+         settings: UserSettings,
+         allowFingerInput: Bool,
+         onLetterAward: @escaping (LetterTimelineItem) -> Void,
+         onProgressChanged: @escaping (Int, Int) -> Void,
+         onLessonComplete: @escaping () -> Void) {
+        self.lesson = lesson
+        self.settings = settings
+        self.allowFingerInput = allowFingerInput
+        self.onLetterAward = onLetterAward
+        self.onProgressChanged = onProgressChanged
+        self.onLessonComplete = onLessonComplete
+        _viewModel = StateObject(wrappedValue: FreePracticeViewModel(initialText: lesson.practiceText))
+    }
+
+    private var guidesEnabled: Bool {
+        settings.prefersGuides
+    }
 
     var body: some View {
         GeometryReader { proxy in
-            let metrics = PracticeCanvasMetrics(strokeSize: strokePreference(for: settings.difficulty))
+            let metrics = PracticeCanvasMetrics(strokeSize: settings.difficulty.profile.strokeSize)
             let layout = WordLayout(items: viewModel.timeline,
                                     availableWidth: proxy.size.width,
                                     metrics: metrics,
                                     isLeftHanded: settings.isLeftHanded)
 
             ZStack(alignment: .top) {
-                VStack(spacing: 22) {
+                VStack(spacing: 18) {
                     ReferenceLineView(layout: layout,
                                       currentIndex: viewModel.currentLetterIndex,
                                       animationToken: animationToken,
@@ -445,20 +276,24 @@ private struct PracticeBoard: View {
                                          guidesEnabled: guidesEnabled,
                                          difficulty: settings.difficulty,
                                          hapticsEnabled: settings.hapticsEnabled,
+                                         allowFingerInput: allowFingerInput,
                                          onWarning: {
-                                             registerWarning()
+                                             viewModel.markWarningForCurrentLetter()
                                          },
                                          onStrokeValidated: { _, _ in },
                                          onLetterComplete: {
-                                             if let letter = viewModel.currentLetter {
-                                                 awardLetterTime(letter)
-                                             }
-                                             viewModel.markLetterCompleted()
+                                             guard let letter = viewModel.currentLetter else { return }
+                                             onLetterAward(letter)
+                                             let lessonDone = viewModel.markLetterCompleted()
+                                             onProgressChanged(viewModel.completedLetterCount,
+                                                               viewModel.totalPractiseableLetters)
                                              viewModel.advanceToNextPractiseableLetter()
+                                             if lessonDone {
+                                                 triggerLessonCompletion()
+                                             }
                                          },
-                                        onSuccessFeedback: { showSuccessFeedback() },
-                                        onRetryFeedback: { showRetryFeedback() })
-
+                                         onSuccessFeedback: { showSuccessFeedback() },
+                                         onRetryFeedback: { showRetryFeedback() })
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .onChange(of: viewModel.targetText) { _ in
@@ -475,20 +310,35 @@ private struct PracticeBoard: View {
                 }
             }
         }
-        .frame(minHeight: 260)
+        .frame(minHeight: 280)
+        .onAppear {
+            viewModel.resumeIfNeeded()
+            onProgressChanged(viewModel.completedLetterCount, viewModel.totalPractiseableLetters)
+        }
+        .onChange(of: viewModel.currentLetterIndex) { _ in
+            animationToken &+= 1
+        }
+        .onChange(of: viewModel.targetText) { _ in
+            animationToken &+= 1
+            completionGuard = false
+        }
     }
 
-    private func strokePreference(for difficulty: PracticeDifficulty) -> StrokeSizePreference {
-        difficulty.profile.strokeSize
+    private func triggerLessonCompletion() {
+        guard !completionGuard else { return }
+        completionGuard = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            onLessonComplete()
+        }
     }
 
     private func showSuccessFeedback() {
-        showFeedback(text: positiveMessages.randomElement() ?? "Great job!",
+        showFeedback(text: FeedbackMessage.successPhrases.randomElement() ?? "Great job!",
                      color: Color(red: 0.34, green: 0.67, blue: 0.5))
     }
 
     private func showRetryFeedback() {
-        showFeedback(text: retryMessages.randomElement() ?? "Try again!",
+        showFeedback(text: FeedbackMessage.retryPhrases.randomElement() ?? "Try again!",
                      color: Color(red: 0.96, green: 0.53, blue: 0.32))
     }
 
@@ -504,6 +354,33 @@ private struct PracticeBoard: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Feedback Message
+
+private struct FeedbackMessage: Identifiable {
+    let id = UUID()
+    let text: String
+    let color: Color
+
+    static let successPhrases = ["Great job!", "Awesome!", "Nice stroke!", "Super work!", "You got it!"]
+    static let retryPhrases = ["Try again!", "Give it another go!", "Reset and retry!", "Almost!", "Keep practicing!"]
+}
+
+// MARK: - Practice Background
+
+private struct PracticeBackground: View {
+    var body: some View {
+        LinearGradient(
+            colors: [
+                Color(red: 0.97, green: 0.99, blue: 1.0),
+                Color(red: 0.95, green: 0.95, blue: 1.0)
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        .ignoresSafeArea()
     }
 }
 
@@ -547,7 +424,7 @@ private struct ReferenceLineView: View {
                     .frame(width: max(segment.frame.width, 32),
                            height: layout.ascender + layout.descender + 24)
                     .position(x: segment.frame.midX,
-                             y: (layout.ascender + layout.descender + 24) / 2)
+                              y: (layout.ascender + layout.descender + 24) / 2)
                     .contentShape(Rectangle())
                     .onTapGesture {
                         onTap(index, segment)
@@ -630,6 +507,7 @@ private struct LetterPracticeCanvas: View {
     let guidesEnabled: Bool
     let difficulty: PracticeDifficulty
     let hapticsEnabled: Bool
+    let allowFingerInput: Bool
     let onWarning: () -> Void
     let onStrokeValidated: (Int, Int) -> Void
     let onLetterComplete: () -> Void
@@ -692,12 +570,8 @@ private struct LetterPracticeCanvas: View {
     var body: some View {
         let canvasWidth = layout.width + layout.leadingInset * 2
         return ZStack(alignment: .topLeading) {
-            RoundedRectangle(cornerRadius: 32, style: .continuous)
-                .fill(Color(red: 0.96, green: 0.98, blue: 1.0))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 32, style: .continuous)
-                        .stroke(Color(red: 0.78, green: 0.86, blue: 1.0).opacity(0.7), lineWidth: 2)
-                )
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .stroke(Color.white.opacity(0.35), lineWidth: 1.2)
 
             PracticeRowGuides(width: layout.width,
                               ascender: layout.ascender,
@@ -719,7 +593,7 @@ private struct LetterPracticeCanvas: View {
                              onDrawingChanged: { updated in
                                  processDrawingChange(updated)
                              },
-                             allowFingerFallback: false,
+                             allowFingerFallback: allowFingerInput,
                              lineWidth: metrics.userInkWidth)
                 .padding(.horizontal, 0)
 
@@ -736,8 +610,7 @@ private struct LetterPracticeCanvas: View {
             }
         }
         .frame(height: canvasHeight)
-        .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
-        .shadow(color: Color.black.opacity(0.08), radius: 18, x: 0, y: 12)
+        .padding(.vertical, 6)
         .onChange(of: layout.cacheKey) {
             DispatchQueue.main.async {
                 resetCanvas()
@@ -762,7 +635,7 @@ private struct LetterPracticeCanvas: View {
     }
 
     private func processDrawingChange(_ updated: PKDrawing) {
-        guard let segment = currentSegment, !segment.strokes.isEmpty else {
+        guard let segment = currentSegment else {
             drawing = PKDrawing()
             return
         }
@@ -804,7 +677,7 @@ private struct LetterPracticeCanvas: View {
         }
     }
 
-    private func validateStartPoint(for stroke: PKStroke, templateStroke: ScaledStroke) -> Bool {
+    private func validateStartPoint(for stroke: PKStroke, templateStroke: WordLayout.ScaledStroke) -> Bool {
         guard let firstPoint = stroke.path.firstLocation else { return false }
         let tolerance = metrics.startTolerance(for: difficulty)
         let snapRadius = tolerance * difficulty.profile.startSnapMultiplier
@@ -825,7 +698,7 @@ private struct LetterPracticeCanvas: View {
         return false
     }
 
-    private func validateDeviation(for stroke: PKStroke, templateStroke: ScaledStroke) -> Bool {
+    private func validateDeviation(for stroke: PKStroke, templateStroke: WordLayout.ScaledStroke) -> Bool {
         let userPoints = stroke.sampledPoints(step: 4)
         guard !userPoints.isEmpty else { return false }
 
@@ -864,7 +737,7 @@ private struct LetterPracticeCanvas: View {
     }
 
     private func nearestDistance(for point: CGPoint,
-                                 templateStroke: ScaledStroke,
+                                 templateStroke: WordLayout.ScaledStroke,
                                  corridor: CGFloat) -> CGFloat {
         var nearest = CGFloat.greatestFiniteMagnitude
         for templatePoint in templateStroke.sampledPoints {
@@ -880,7 +753,7 @@ private struct LetterPracticeCanvas: View {
     }
 
     private func nearestDistanceToTemplate(_ point: CGPoint,
-                                           templateStrokes: [ScaledStroke],
+                                           templateStrokes: [WordLayout.ScaledStroke],
                                            corridor: CGFloat) -> CGFloat {
         var nearest = CGFloat.greatestFiniteMagnitude
         for stroke in templateStrokes {
@@ -901,8 +774,8 @@ private struct LetterPracticeCanvas: View {
                                        userPoints: [CGPoint],
                                        corridor: CGFloat) -> CGFloat {
         var nearest = CGFloat.greatestFiniteMagnitude
-        for userPoint in userPoints {
-            let distance = hypot(point.x - userPoint.x, point.y - userPoint.y)
+        for candidate in userPoints {
+            let distance = hypot(point.x - candidate.x, point.y - candidate.y)
             if distance < nearest {
                 nearest = distance
                 if nearest < corridor * 0.2 {
@@ -914,11 +787,9 @@ private struct LetterPracticeCanvas: View {
     }
 
     private func coverageRatio(for strokes: [PKStroke],
-                               templateStrokes: [ScaledStroke],
+                               templateStrokes: [WordLayout.ScaledStroke],
                                corridor: CGFloat,
                                perStroke: inout [Double]) -> Double {
-        guard !strokes.isEmpty, !templateStrokes.isEmpty, corridor > 0 else { return 0 }
-
         let userSamples = strokes.flatMap { $0.sampledPoints(step: 3) }
         guard !userSamples.isEmpty else { return 0 }
 
@@ -966,7 +837,7 @@ private struct LetterPracticeCanvas: View {
     }
 
     private func shouldCompleteLetter(strokes: [PKStroke],
-                                      templateStrokes: [ScaledStroke]) -> Bool {
+                                      templateStrokes: [WordLayout.ScaledStroke]) -> Bool {
         guard !templateStrokes.isEmpty else { return false }
 
         if currentStrokeIndex >= templateStrokes.count {
@@ -1045,7 +916,25 @@ private struct LetterPracticeCanvas: View {
     }
 }
 
-// MARK: - Guides Overlay
+private enum LetterStatus {
+    case completed
+    case current
+    case needsWork
+    case upcoming
+
+    var fillColor: Color {
+        switch self {
+        case .completed:
+            return Color(red: 0.45, green: 0.74, blue: 0.51)
+        case .current:
+            return Color(red: 1.0, green: 0.82, blue: 0.36)
+        case .needsWork:
+            return Color(red: 0.93, green: 0.43, blue: 0.39)
+        case .upcoming:
+            return Color(red: 0.8, green: 0.86, blue: 0.94)
+        }
+    }
+}
 
 private struct WordGuidesOverlay: View {
     let layout: WordLayout
@@ -1169,8 +1058,6 @@ private struct EndDot: View {
             .position(position)
     }
 }
-
-// MARK: - Word Layout
 
 private struct WordLayout {
     struct Segment: Identifiable {
@@ -1394,14 +1281,70 @@ private struct WordLayout {
         let y = ascender - displacement * verticalScale
         return CGPoint(x: cursor + x, y: y)
     }
-}
 
-// MARK: - Drawing Helpers
+    struct ScaledStroke: Identifiable {
+        let id: String
+        let order: Int
+        let path: Path
+        let points: [CGPoint]
+        let startPoint: CGPoint
+        let endPoint: CGPoint
+        let sampledPoints: [CGPoint]
 
-struct FeedbackMessage: Identifiable, Equatable {
-    let id = UUID()
-    let text: String
-    let color: Color
+        init(id: String,
+             order: Int,
+             path: Path,
+             points: [CGPoint],
+             startPoint: CGPoint,
+             endPoint: CGPoint) {
+            self.id = id
+            self.order = order
+            self.path = path
+            self.points = points
+            self.startPoint = startPoint
+            self.endPoint = endPoint
+            self.sampledPoints = ScaledStroke.sample(points: points, stride: 6)
+        }
+
+        private static func sample(points: [CGPoint], stride: Int) -> [CGPoint] {
+            guard stride > 0 else { return points }
+            var result: [CGPoint] = []
+            var index = 0
+            for point in points {
+                if index % stride == 0 {
+                    result.append(point)
+                }
+                index += 1
+            }
+            if let last = points.last, result.last != last {
+                result.append(last)
+            }
+            return result
+        }
+
+        func closestDistance(to point: CGPoint, sampleCount: Int) -> CGFloat {
+            guard !sampledPoints.isEmpty else { return CGFloat.greatestFiniteMagnitude }
+            let samples = max(sampleCount, 12)
+            let stride = max(sampledPoints.count / samples, 1)
+            var nearest = CGFloat.greatestFiniteMagnitude
+            for (index, strokePoint) in sampledPoints.enumerated() where index % stride == 0 {
+                let distance = hypot(point.x - strokePoint.x, point.y - strokePoint.y)
+                if distance < nearest {
+                    nearest = distance
+                }
+            }
+            return nearest
+        }
+
+        func corridorPath(expand radius: CGFloat) -> Path {
+            var path = Path()
+            guard !points.isEmpty else { return path }
+            path.addLines(points)
+            return path.strokedPath(.init(lineWidth: radius * 2,
+                                          lineCap: .round,
+                                          lineJoin: .round))
+        }
+    }
 }
 
 private struct FeedbackBubbleView: View {

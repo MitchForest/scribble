@@ -2,10 +2,12 @@ import Foundation
 
 @MainActor
 final class PracticeDataStore: ObservableObject {
-    static let focusLetters: [String] = [
-        "a.lower", "c.lower", "d.lower", "e.lower",
-        "i.lower", "l.lower", "t.lower", "u.lower"
-    ]
+    static let focusLetters: [String] = {
+        let alphabet = Array("abcdefghijklmnopqrstuvwx")
+        let lowers = alphabet.map { "\($0).lower" }
+        let uppers = alphabet.map { "\($0).upper" }
+        return lowers + uppers
+    }()
 
     @Published private(set) var attemptsByLetter: [String: [LetterAttemptRecord]] = [:]
     @Published private(set) var masteryByLetter: [String: LetterMasteryRecord] = [:]
@@ -14,6 +16,7 @@ final class PracticeDataStore: ObservableObject {
     @Published private(set) var contentVersion: String
     @Published private(set) var profile: UserProfile = .default
     @Published private(set) var xpEvents: [XPEvent] = []
+    @Published private(set) var lessonProgressRecords: [PracticeLesson.ID: LessonProgressRecord] = [:]
 
     private let persistenceURL: URL
     private let encoder = JSONEncoder()
@@ -131,6 +134,31 @@ final class PracticeDataStore: ObservableObject {
         letterId.components(separatedBy: ".").first?.uppercased() ?? letterId
     }
 
+    func lessonProgress(for lesson: PracticeLesson) -> LessonProgress {
+        let total = max(lesson.totalLetters, 1)
+        let record = lessonProgressRecords[lesson.id]
+        let completed = min(record?.completedLetters ?? 0, total)
+        return LessonProgress(completed: completed, total: total)
+    }
+
+    func updateLessonProgress(for lesson: PracticeLesson,
+                              completedLetters: Int,
+                              totalLetters: Int,
+                              updatedAt: Date = Date()) {
+        let clampedTotal = max(totalLetters, 0)
+        let clampedCompleted = min(max(completedLetters, 0), clampedTotal)
+        var record = lessonProgressRecords[lesson.id] ?? LessonProgressRecord(lessonId: lesson.id,
+                                                                              completedLetters: 0,
+                                                                              updatedAt: updatedAt)
+        guard record.completedLetters != clampedCompleted else {
+            return
+        }
+        record.completedLetters = clampedCompleted
+        record.updatedAt = updatedAt
+        lessonProgressRecords[lesson.id] = record
+        saveSnapshot()
+    }
+
     private func unlockNextLetter(after letterId: String) -> UnlockEvent? {
         guard let index = Self.focusLetters.firstIndex(of: letterId) else {
             return nil
@@ -176,6 +204,11 @@ final class PracticeDataStore: ObservableObject {
             } else {
                 xpEvents = []
             }
+            if let storedLessonProgress = snapshot.lessonProgress {
+                lessonProgressRecords = Dictionary(uniqueKeysWithValues: storedLessonProgress.map { ($0.lessonId, $0) })
+            } else {
+                lessonProgressRecords = [:]
+            }
             if let outcomes = snapshot.flowOutcomes {
                 latestFlowOutcomes = Dictionary(uniqueKeysWithValues: outcomes.map { ($0.letterId, $0) })
             } else {
@@ -207,7 +240,8 @@ final class PracticeDataStore: ObservableObject {
                                             contentVersion: contentVersion,
                                             flowOutcomes: orderedFlowOutcomes(),
                                             profile: profile,
-                                            xpEvents: xpEvents.sorted(by: { $0.createdAt < $1.createdAt }))
+                                            xpEvents: xpEvents.sorted(by: { $0.createdAt < $1.createdAt }),
+                                            lessonProgress: orderedLessonProgress())
         do {
             let data = try encoder.encode(snapshot)
             try data.write(to: persistenceURL, options: .atomic)
@@ -221,6 +255,10 @@ final class PracticeDataStore: ObservableObject {
         return order.compactMap { latestFlowOutcomes[$0] }
     }
 
+    private func orderedLessonProgress() -> [LessonProgressRecord] {
+        lessonProgressRecords.values.sorted(by: { $0.lessonId < $1.lessonId })
+    }
+
     private func seedDefaults() {
         attemptsByLetter = [:]
         masteryByLetter = [:]
@@ -232,6 +270,7 @@ final class PracticeDataStore: ObservableObject {
         contentVersion = assetsVersion
         profile = .default
         xpEvents = []
+        lessonProgressRecords = [:]
         saveSnapshot()
     }
 
@@ -399,7 +438,14 @@ final class PracticeDataStore: ObservableObject {
         difficulty.profile.strokeSize
     }
 
-    private func difficulty(for strokeSize: StrokeSizePreference) -> PracticeDifficulty {
+private func difficulty(for strokeSize: StrokeSizePreference) -> PracticeDifficulty {
         PracticeDifficulty.allCases.first(where: { $0.profile.strokeSize == strokeSize }) ?? .intermediate
+    }
+}
+
+extension PracticeDataStore {
+    struct LessonProgress: Equatable {
+        let completed: Int
+        let total: Int
     }
 }
