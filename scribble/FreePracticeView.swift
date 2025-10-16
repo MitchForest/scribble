@@ -210,7 +210,6 @@ private struct PracticeBoard: View {
     let registerWarning: () -> Void
 
     @State private var layoutKey: String = ""
-    @State private var resetSignal = 0
     @State private var feedback: FeedbackMessage?
 
     private let positiveMessages = ["Great job!", "Awesome!", "Nice stroke!", "Super work!", "You got it!"]
@@ -238,7 +237,6 @@ private struct PracticeBoard: View {
                                          guidesEnabled: guidesEnabled,
                                          difficulty: settings.difficulty,
                                          hapticsEnabled: settings.hapticsEnabled,
-                                         resetSignal: resetSignal,
                                          onWarning: {
                                              registerWarning()
                                          },
@@ -253,7 +251,6 @@ private struct PracticeBoard: View {
                                          onSuccessFeedback: { showSuccessFeedback() },
                                          onRetryFeedback: { showRetryFeedback() })
 
-                    ControlBar(resetAction: { resetSignal &+= 1 })
                 }
                 .onChange(of: viewModel.targetText) {
                     layoutKey = ""
@@ -296,36 +293,6 @@ private struct PracticeBoard: View {
                     feedback = nil
                 }
             }
-        }
-    }
-}
-
-private struct ControlBar: View {
-    let resetAction: () -> Void
-
-    var body: some View {
-        HStack(spacing: 16) {
-            Button(action: resetAction) {
-                HStack(spacing: 8) {
-                    Image(systemName: "arrow.counterclockwise")
-                    Text("Reset")
-                        .font(.subheadline.weight(.semibold))
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(
-                    Capsule()
-                        .fill(Color.white.opacity(0.92))
-                )
-                .overlay(
-                    Capsule()
-                        .stroke(Color.white.opacity(0.7), lineWidth: 1)
-                )
-                .foregroundStyle(Color(red: 0.32, green: 0.42, blue: 0.61))
-            }
-            .buttonStyle(.plain)
-
-            Spacer()
         }
     }
 }

@@ -9,6 +9,10 @@ struct ProfileCenterView: View {
     @State private var customLetters: Int = 60
     @State private var selectedWeekdays: Set<Int> = Set([0, 1, 2, 3, 4])
 
+    private let showsHandle: Bool
+    private let onBack: (() -> Void)?
+    private let onCloseOverride: (() -> Void)?
+
     private let weekdayOptions: [WeekdayOption] = [
         WeekdayOption(index: 0, shortLabel: "Mon", fullLabel: "Monday"),
         WeekdayOption(index: 1, shortLabel: "Tue", fullLabel: "Tuesday"),
@@ -27,28 +31,52 @@ struct ProfileCenterView: View {
         max(dataStore.profile.goal.dailyLetterGoal, 1)
     }
 
-    var body: some View {
-        VStack(spacing: 18) {
-            Capsule()
-                .fill(Color.black.opacity(0.18))
-                .frame(width: 60, height: 6)
-                .padding(.top, 12)
+    init(showsHandle: Bool = true,
+         onBack: (() -> Void)? = nil,
+         onClose: (() -> Void)? = nil) {
+        self.showsHandle = showsHandle
+        self.onBack = onBack
+        self.onCloseOverride = onClose
+        _nameDraft = State(initialValue: "")
+        _customLetters = State(initialValue: 60)
+        _selectedWeekdays = State(initialValue: Set([0, 1, 2, 3, 4]))
+    }
 
-            HStack {
-                Text("Profile Center")
-                    .font(.system(size: 26, weight: .heavy, design: .rounded))
-                    .foregroundColor(ScribbleColors.primary)
-                Spacer()
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 26, weight: .bold))
-                        .foregroundColor(ScribbleColors.secondary)
-                }
-                .buttonStyle(.plain)
+    var body: some View {
+        Group {
+            if showsHandle {
+                content
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.hidden)
+            } else {
+                content
             }
-            .padding(.horizontal, 24)
+        }
+        .onAppear {
+            syncInitialState()
+        }
+        .onChange(of: dataStore.profile.goal.dailySeconds) { _, newValue in
+            let letters = max(newValue / PracticeGoal.secondsPerLetter, 1)
+            customLetters = letters
+        }
+        .onChange(of: dataStore.profile.goal.activeWeekdayIndices) { _, newValue in
+            selectedWeekdays = newValue
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        VStack(spacing: 18) {
+            if showsHandle {
+                Capsule()
+                    .fill(Color.black.opacity(0.18))
+                    .frame(width: 60, height: 6)
+                    .padding(.top, 12)
+            }
+
+            header
+                .padding(.horizontal, 24)
+                .padding(.top, showsHandle ? 0 : 12)
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 24) {
@@ -64,18 +92,43 @@ struct ProfileCenterView: View {
             ScribbleColors.cardBackground
                 .ignoresSafeArea()
         )
-        .presentationDetents([.large])
-        .presentationDragIndicator(.hidden)
-        .onAppear {
-            syncInitialState()
+    }
+
+    private var header: some View {
+        HStack(spacing: 14) {
+            if let onBack {
+                Button {
+                    nameFieldFocused = false
+                    onBack()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundColor(ScribbleColors.secondary)
+                        .padding(.vertical, 4)
+                }
+                .buttonStyle(.plain)
+            }
+
+            Text("Profile Center")
+                .font(.system(size: 26, weight: .heavy, design: .rounded))
+                .foregroundColor(ScribbleColors.primary)
+
+            Spacer()
+
+            Button {
+                nameFieldFocused = false
+                closeAction()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 26, weight: .bold))
+                    .foregroundColor(ScribbleColors.secondary)
+            }
+            .buttonStyle(.plain)
         }
-        .onChange(of: dataStore.profile.goal.dailySeconds) { _, newValue in
-            let letters = max(newValue / PracticeGoal.secondsPerLetter, 1)
-            customLetters = letters
-        }
-        .onChange(of: dataStore.profile.goal.activeWeekdayIndices) { _, newValue in
-            selectedWeekdays = newValue
-        }
+    }
+
+    private var closeAction: () -> Void {
+        onCloseOverride ?? { dismiss() }
     }
 
     private var identitySection: some View {

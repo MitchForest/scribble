@@ -14,20 +14,14 @@ final class FreePracticeViewModel: ObservableObject {
     @Published private(set) var timeline: [LetterTimelineItem] = []
     @Published private(set) var letterStates: [LetterState] = []
     @Published private(set) var currentLetterIndex: Int = 0
-    let presets: [DrillPreset]
 
-    init(presets: [DrillPreset] = DrillPreset.defaultPresets) {
-        self.presets = presets
-        self.targetText = presets.first?.text ?? "a a a"
+    init(initialText: String = "a a a") {
+        self.targetText = initialText
         scheduleTimelineUpdate()
     }
 
     var currentLetter: LetterTimelineItem? {
         timeline[safe: currentLetterIndex]
-    }
-
-    func selectPreset(_ preset: DrillPreset) {
-        targetText = preset.text
     }
 
     func jump(to index: Int) {
@@ -162,18 +156,4 @@ struct LetterTimelineItem: Identifiable {
     var strokeCount: Int {
         template?.strokes.count ?? 0
     }
-}
-
-struct DrillPreset: Identifiable {
-    let id = UUID()
-    let title: String
-    let text: String
-
-    static let defaultPresets: [DrillPreset] = [
-        DrillPreset(title: "Warm Up", text: "a a a a"),
-        DrillPreset(title: "Alphabet", text: "a b c d e"),
-        DrillPreset(title: "Loops", text: "l e l e"),
-        DrillPreset(title: "Words", text: "the fox"),
-        DrillPreset(title: "Sparkle", text: "sun moon")
-    ]
 }

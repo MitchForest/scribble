@@ -160,24 +160,31 @@ struct OnboardingFlowView: View {
                 .ignoresSafeArea()
 
             GeometryReader { proxy in
+                let step = currentStep
                 let verticalPadding = max(proxy.size.height * 0.06, 24)
-                let maxCardHeight = min(proxy.size.height * 0.7, 620)
+                let availableHeight = max(proxy.size.height - (verticalPadding * 2), 360)
+                let cardMinHeight = cardMinimumHeight(for: step)
+                let cardMaxHeight = min(max(availableHeight, cardMinHeight), cardMaximumHeight(for: step, containerHeight: proxy.size.height))
+                let verticalInsets = cardVerticalPadding(for: step)
+                let navigationSpacing = cardNavigationSpacing(for: step)
 
                 VStack {
                     Spacer(minLength: verticalPadding)
 
-                    VStack(spacing: 24) {
-                        stepContent
+                    VStack(spacing: navigationSpacing) {
+                        cardContent(for: step,
+                                    cardMinHeight: cardMinHeight,
+                                    cardMaxHeight: cardMaxHeight)
                             .transition(.move(edge: .trailing).combined(with: .opacity))
 
-                        Spacer(minLength: 0)
-
-                        navigationFloor
+                        navigationFloor(for: step)
                     }
                     .padding(.horizontal, 28)
-                    .padding(.vertical, 28)
+                    .padding(.vertical, verticalInsets)
                     .frame(maxWidth: 560)
-                    .frame(maxHeight: maxCardHeight, alignment: .top)
+                    .frame(minHeight: cardMinHeight,
+                           maxHeight: cardMaxHeight,
+                           alignment: .top)
                     .background(
                         RoundedRectangle(cornerRadius: 36, style: .continuous)
                             .fill(Palette.cardBackground)
@@ -205,8 +212,8 @@ struct OnboardingFlowView: View {
     }
 
     @ViewBuilder
-    private var stepContent: some View {
-        switch currentStep {
+    private func stepView(for step: Step) -> some View {
+        switch step {
         case .name:
             NameStepView(name: $name,
                          isFocused: $nameFieldFocused,
@@ -229,10 +236,11 @@ struct OnboardingFlowView: View {
         }
     }
 
-    private var navigationFloor: some View {
+    @ViewBuilder
+    private func navigationFloor(for step: Step) -> some View {
         VStack(spacing: 20) {
             HStack(spacing: 16) {
-                KidSecondaryButton(title: "Back", isEnabled: currentStep != .name) {
+                KidSecondaryButton(title: "Back", isEnabled: step != .name) {
                     goToPreviousStep()
                 }
                 KidPrimaryButton(title: nextButtonTitle, isEnabled: canProceed) {
@@ -240,7 +248,7 @@ struct OnboardingFlowView: View {
                 }
             }
 
-            if currentStep == .name {
+            if step == .name {
                 Button(action: completeOnboarding) {
                     Text("Skip for now")
                         .font(.system(size: 18, weight: .bold, design: .rounded))
@@ -254,6 +262,117 @@ struct OnboardingFlowView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.top, 4)
         }
+    }
+
+
+    private func cardMinimumHeight(for step: Step) -> CGFloat {
+        switch step {
+        case .name: return 360
+        case .age: return 380
+        case .gender: return 420
+        case .avatar: return 520
+        case .skillLevel: return 440
+        case .goals: return 500
+        }
+    }
+
+    private func cardMaximumHeight(for step: Step, containerHeight: CGFloat) -> CGFloat {
+        let factor: CGFloat
+        let cap: CGFloat
+        switch step {
+        case .avatar:
+            factor = 0.88
+            cap = 780
+        case .goals:
+            factor = 0.84
+            cap = 700
+        case .gender, .skillLevel:
+            factor = 0.8
+            cap = 680
+        case .age:
+            factor = 0.74
+            cap = 600
+        case .name:
+            factor = 0.7
+            cap = 560
+        }
+        let computed = containerHeight * factor
+        return min(max(computed, cardMinimumHeight(for: step) + 40), cap)
+    }
+
+    private func cardVerticalPadding(for step: Step) -> CGFloat {
+        switch step {
+        case .avatar, .goals: return 32
+        case .skillLevel, .gender: return 30
+        case .age: return 28
+        case .name: return 26
+        }
+    }
+
+    private func cardNavigationSpacing(for step: Step) -> CGFloat {
+        switch step {
+        case .name: return 24
+        case .age: return 26
+        case .gender: return 28
+        case .skillLevel, .goals: return 30
+        case .avatar: return 32
+        }
+    }
+
+    private func preferredContentHeight(for step: Step) -> CGFloat {
+        switch step {
+        case .name: return 360
+        case .age: return 400
+        case .gender: return 540
+        case .skillLevel: return 540
+        case .avatar: return 640
+        case .goals: return 620
+        }
+    }
+
+    private func navigationReservedHeight(for step: Step) -> CGFloat {
+        switch step {
+        case .avatar: return 220
+        case .goals: return 210
+        case .skillLevel, .gender: return 200
+        case .age, .name: return 190
+        }
+    }
+
+    private func scrollBottomPadding(for step: Step) -> CGFloat {
+        switch step {
+        case .avatar: return 24
+        case .goals: return 18
+        default: return 0
+        }
+    }
+
+    @ViewBuilder
+    private func cardContent(for step: Step,
+                             cardMinHeight: CGFloat,
+                             cardMaxHeight: CGFloat) -> some View {
+        let effectiveMaxHeight = max(cardMaxHeight - navigationReservedHeight(for: step), cardMinHeight - 40)
+        let baseContent = stepView(for: step)
+
+        if shouldEnableScroll(for: step, cardMaxHeight: cardMaxHeight) {
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 0) {
+                    baseContent
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.bottom, scrollBottomPadding(for: step))
+            }
+            .frame(maxHeight: max(effectiveMaxHeight, cardMinHeight * 0.75))
+        } else {
+            VStack(spacing: 0) {
+                baseContent
+            }
+            .frame(maxWidth: .infinity, alignment: .center)
+        }
+    }
+
+    private func shouldEnableScroll(for step: Step, cardMaxHeight: CGFloat) -> Bool {
+        preferredContentHeight(for: step) > cardMaxHeight
     }
 
     private func prepareInitialState() {
@@ -395,27 +514,38 @@ private struct NameStepView: View {
                     .multilineTextAlignment(.center)
             }
 
-            TextField("Type your name here", text: $name)
-                .font(.system(size: 30, weight: .semibold, design: .rounded))
-                .textInputAutocapitalization(.words)
-                .disableAutocorrection(true)
-                .foregroundColor(Palette.primary)
-                .tint(Palette.accentDark)
-                .padding(.horizontal, 28)
-                .padding(.vertical, 24)
-                .frame(maxWidth: .infinity, minHeight: 78)
-                .background(
-                    RoundedRectangle(cornerRadius: 32, style: .continuous)
-                        .fill(Color.white)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 32, style: .continuous)
-                        .stroke(name.isEmpty ? Palette.inputBorder : Palette.accent, lineWidth: 3)
-                )
-                .shadow(color: Color.black.opacity(0.08), radius: 10, x: 0, y: 8)
-                .focused(isFocused)
-                .submitLabel(.done)
-                .onSubmit(onSubmit)
+            ZStack(alignment: .leading) {
+                if name.isEmpty {
+                    Text("Type your name here")
+                        .font(.system(size: 30, weight: .semibold, design: .rounded))
+                        .foregroundColor(Palette.primary.opacity(0.68))
+                        .padding(.horizontal, 28)
+                        .padding(.vertical, 24)
+                }
+
+                TextField("", text: $name)
+                    .font(.system(size: 30, weight: .semibold, design: .rounded))
+                    .textInputAutocapitalization(.words)
+                    .disableAutocorrection(true)
+                    .foregroundColor(Palette.primary)
+                    .tint(Palette.accentDark)
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 24)
+                    .frame(maxWidth: .infinity, minHeight: 78)
+                    .background(
+                        RoundedRectangle(cornerRadius: 32, style: .continuous)
+                            .fill(Color.white)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 32, style: .continuous)
+                            .stroke(name.isEmpty ? Palette.inputBorder : Palette.accent, lineWidth: 3)
+                    )
+                    .shadow(color: Color.black.opacity(0.08), radius: 10, x: 0, y: 8)
+                    .focused(isFocused)
+                    .accessibilityLabel("Name")
+                    .submitLabel(.done)
+                    .onSubmit(onSubmit)
+            }
         }
     }
 }
@@ -426,12 +556,12 @@ private struct GenderStepView: View {
     var body: some View {
         VStack(spacing: 24) {
             VStack(spacing: 10) {
-                Text("What should we call you?")
+                Text("What's your gender?")
                     .font(.system(size: 32, weight: .heavy, design: .rounded))
                     .foregroundColor(Palette.primary)
                     .multilineTextAlignment(.center)
 
-                Text("Pick the option that feels right. You can change it later.")
+                Text("Pick an option and tap Next.")
                     .font(.system(size: 20, weight: .medium, design: .rounded))
                     .foregroundColor(Palette.secondary)
                     .multilineTextAlignment(.center)

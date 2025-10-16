@@ -2,7 +2,7 @@ import SwiftUI
 
 struct HomeView: View {
     @EnvironmentObject private var dataStore: PracticeDataStore
-    @State private var showProfile = false
+    @State private var showStreakHistory = false
     @State private var path = NavigationPath()
 
     private let contributionWindow = 42
@@ -32,30 +32,33 @@ struct HomeView: View {
     }
 
     private var streakChip: some View {
-        HStack(alignment: .center, spacing: 10) {
-            Image(systemName: "flame.fill")
-                .font(.system(size: 16, weight: .bold))
-                .foregroundColor(Color(red: 0.98, green: 0.58, blue: 0.25))
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Streak")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .foregroundColor(ScribbleColors.secondary.opacity(0.8))
-                Text("\(streak) \(streak == 1 ? "day" : "days")")
-                    .font(.system(size: 16, weight: .heavy, design: .rounded))
+        Button {
+            showStreakHistory = true
+        } label: {
+            HStack(alignment: .center, spacing: 12) {
+                Image(systemName: "flame.fill")
+                    .font(.system(size: 26, weight: .bold))
+                    .foregroundColor(Color(red: 0.98, green: 0.58, blue: 0.25))
+                    .shadow(color: Color(red: 1.0, green: 0.75, blue: 0.4).opacity(0.35), radius: 8, x: 0, y: 6)
+
+                Text("\(streak)")
+                    .font(.system(size: 24, weight: .heavy, design: .rounded))
                     .foregroundColor(ScribbleColors.primary)
             }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 14)
+            .background(
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(Color.white.opacity(0.92))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .stroke(Color.white.opacity(0.4), lineWidth: 1.5)
+            )
+            .shadow(color: Color.black.opacity(0.12), radius: 14, x: 0, y: 8)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .fill(Color.white.opacity(0.9))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .stroke(Color.white.opacity(0.35), lineWidth: 1.5)
-        )
-        .shadow(color: Color.black.opacity(0.08), radius: 12, x: 0, y: 6)
+        .buttonStyle(.plain)
+        .accessibilityLabel("Current streak \(streak) \(streak == 1 ? "day" : "days"). Tap to view streak history.")
     }
 
     var body: some View {
@@ -68,12 +71,10 @@ struct HomeView: View {
                         Spacer(minLength: proxy.size.height * 0.08)
                         startButton
                         Spacer()
-                        GoalTrackerCard(contributions: contributions,
-                                        goal: dataStore.profile.goal)
-                        .padding(.bottom, proxy.size.height * 0.04)
                     }
                     .padding(.horizontal, 28)
                     .padding(.top, 32)
+                    .padding(.bottom, proxy.size.height * 0.08)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 }
             }
@@ -84,9 +85,18 @@ struct HomeView: View {
                         .environmentObject(dataStore)
                 }
             }
-            .sheet(isPresented: $showProfile) {
-                ProfileCenterView()
-                    .environmentObject(dataStore)
+            .sheet(isPresented: $showStreakHistory) {
+                if #available(iOS 16.0, *) {
+                    StreakHistorySheet(streak: streak,
+                                       contributions: contributions,
+                                       goal: dataStore.profile.goal)
+                        .presentationDetents([.large])
+                        .presentationDragIndicator(.visible)
+                } else {
+                    StreakHistorySheet(streak: streak,
+                                       contributions: contributions,
+                                       goal: dataStore.profile.goal)
+                }
             }
             .toolbar(.hidden, for: .navigationBar)
         }
@@ -112,8 +122,7 @@ struct HomeView: View {
                                   goal: dataStore.profile.goal,
                                   difficulty: dataStore.settings.difficulty,
                                   streak: streak,
-                                  onDifficultyChange: { dataStore.updateDifficulty($0) },
-                                  onOpenProfile: { showProfile = true })
+                                  onDifficultyChange: { dataStore.updateDifficulty($0) })
             }
         }
         .accessibilityElement(children: .combine)
@@ -196,7 +205,6 @@ struct ProfileMenuButton: View {
     let difficulty: PracticeDifficulty
     let streak: Int
     let onDifficultyChange: (PracticeDifficulty) -> Void
-    let onOpenProfile: (() -> Void)?
 
     @State private var showQuickActions = false
 
@@ -218,8 +226,7 @@ struct ProfileMenuButton: View {
                 streak: streak,
                 onDifficultyChange: { newValue in
                     onDifficultyChange(newValue)
-                },
-                onOpenProfile: onOpenProfile
+                }
             )
         }
     }
@@ -274,10 +281,15 @@ private struct ProfileQuickActionsSheet: View {
     let difficulty: PracticeDifficulty
     let streak: Int
     let onDifficultyChange: (PracticeDifficulty) -> Void
-    let onOpenProfile: (() -> Void)?
 
     @State private var selectedDifficulty: PracticeDifficulty
+    @State private var activePage: Page = .overview
     @Environment(\.dismiss) private var dismiss
+
+    private enum Page {
+        case overview
+        case profileCenter
+    }
 
     init(seed: String,
          progress: Double,
@@ -285,8 +297,7 @@ private struct ProfileQuickActionsSheet: View {
          goal: PracticeGoal,
          difficulty: PracticeDifficulty,
          streak: Int,
-         onDifficultyChange: @escaping (PracticeDifficulty) -> Void,
-         onOpenProfile: (() -> Void)?) {
+         onDifficultyChange: @escaping (PracticeDifficulty) -> Void) {
         self.seed = seed
         self.progress = progress
         self.today = today
@@ -294,17 +305,12 @@ private struct ProfileQuickActionsSheet: View {
         self.difficulty = difficulty
         self.streak = streak
         self.onDifficultyChange = onDifficultyChange
-        self.onOpenProfile = onOpenProfile
         _selectedDifficulty = State(initialValue: difficulty)
     }
 
-    var body: some View {
+    @ViewBuilder
+    private var overviewContent: some View {
         VStack(spacing: 26) {
-            Capsule()
-                .fill(Color.black.opacity(0.12))
-                .frame(width: 60, height: 6)
-                .padding(.top, 16)
-
             VStack(spacing: 18) {
                 AvatarProgressButton(seed: seed, progress: progress)
                     .frame(width: 120, height: 120)
@@ -336,31 +342,28 @@ private struct ProfileQuickActionsSheet: View {
                     }
                 }
             }
-            .padding(.horizontal, 24)
 
-            if let onOpenProfile {
-                Button {
-                    dismiss()
-                    onOpenProfile()
-                } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "person.crop.circle")
-                            .font(.system(size: 24, weight: .bold))
-                        Text("Open Profile Center")
-                            .font(.system(size: 20, weight: .heavy, design: .rounded))
-                    }
-                    .foregroundColor(ScribbleColors.accentDark)
-                    .padding(.horizontal, 28)
-                    .padding(.vertical, 16)
-                    .frame(maxWidth: .infinity)
-                    .background(
-                        RoundedRectangle(cornerRadius: ScribbleSpacing.cornerRadiusMedium, style: .continuous)
-                            .fill(ScribbleColors.accent.opacity(0.4))
-                    )
+            Button {
+                withAnimation(.spring(response: 0.42, dampingFraction: 0.85, blendDuration: 0.15)) {
+                    activePage = .profileCenter
                 }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 24)
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "person.crop.circle")
+                        .font(.system(size: 24, weight: .bold))
+                    Text("Open Profile Center")
+                        .font(.system(size: 20, weight: .heavy, design: .rounded))
+                }
+                .foregroundColor(ScribbleColors.accentDark)
+                .padding(.horizontal, 28)
+                .padding(.vertical, 16)
+                .frame(maxWidth: .infinity)
+                .background(
+                    RoundedRectangle(cornerRadius: ScribbleSpacing.cornerRadiusMedium, style: .continuous)
+                        .fill(ScribbleColors.accent.opacity(0.4))
+                )
             }
+            .buttonStyle(.plain)
 
             Button {
                 dismiss()
@@ -372,15 +375,42 @@ private struct ProfileQuickActionsSheet: View {
             }
             .buttonStyle(.plain)
         }
+        .padding(.horizontal, 24)
+        .padding(.top, 26)
+        .padding(.bottom, 24)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Capsule()
+                .fill(Color.black.opacity(0.12))
+                .frame(width: 60, height: 6)
+                .padding(.top, 16)
+
+            Group {
+                switch activePage {
+                case .overview:
+                    overviewContent
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                case .profileCenter:
+                    ProfileCenterView(showsHandle: false,
+                                      onBack: { withAnimation(.spring(response: 0.42, dampingFraction: 0.85)) { activePage = .overview } },
+                                      onClose: { dismiss() })
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
+            }
+        }
+        .animation(.spring(response: 0.42, dampingFraction: 0.85, blendDuration: 0.2), value: activePage)
         .onChange(of: selectedDifficulty) { _, newValue in
             guard newValue != difficulty else { return }
             onDifficultyChange(newValue)
         }
-        .padding(.bottom, 24)
         .background(
             ScribbleColors.cardBackground
                 .ignoresSafeArea()
         )
+        .presentationDetents([.large])
+        .presentationDragIndicator(.hidden)
     }
 
     private var statsCard: some View {
@@ -505,34 +535,122 @@ struct AvatarImage: View {
     }
 }
 
+private struct StreakHistorySheet: View {
+    let streak: Int
+    let contributions: [ContributionDay]
+    let goal: PracticeGoal
+
+    @Environment(\.dismiss) private var dismiss
+
+    private var streakLabel: String {
+        streak == 1 ? "day" : "days"
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 28) {
+                VStack(spacing: 12) {
+                    HStack(spacing: 16) {
+                        Image(systemName: "flame.fill")
+                            .font(.system(size: 40, weight: .bold))
+                            .foregroundColor(Color(red: 0.98, green: 0.58, blue: 0.25))
+                            .shadow(color: Color(red: 1.0, green: 0.72, blue: 0.32).opacity(0.4), radius: 16, x: 0, y: 10)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("\(streak)")
+                                .font(.system(size: 48, weight: .black, design: .rounded))
+                                .foregroundColor(ScribbleColors.primary)
+                            Text("Current streak • \(streakLabel)")
+                                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                                .foregroundColor(ScribbleColors.secondary.opacity(0.8))
+                        }
+
+                        Spacer()
+                    }
+
+                    Text("Great job! Keep the flame burning by practicing on your goal days.")
+                        .font(.system(size: 18, weight: .medium, design: .rounded))
+                        .foregroundColor(ScribbleColors.secondary)
+                        .multilineTextAlignment(.leading)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                GoalTrackerCard(contributions: contributions, goal: goal)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 8)
+
+                Button {
+                    dismiss()
+                } label: {
+                    Text("Close")
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .foregroundColor(ScribbleColors.secondary)
+                        .padding(.top, 4)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 28)
+            .padding(.top, 28)
+            .padding(.bottom, 48)
+        }
+        .background(
+            ScribbleColors.cardBackground
+                .ignoresSafeArea()
+        )
+        .accessibilityElement(children: .contain)
+    }
+}
+
 private struct GoalTrackerCard: View {
     let contributions: [ContributionDay]
     let goal: PracticeGoal
     private let calendar = Calendar(identifier: .gregorian)
-    private let squareSize: CGFloat = 18
     private let dayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 18) {
             Text("Streaks")
                 .font(.system(size: 22, weight: .heavy, design: .rounded))
                 .foregroundColor(ScribbleColors.primary)
             if contributions.isEmpty {
                 EmptyTrackerView()
             } else {
-                ContributionCalendarGrid(weeks: weekColumns,
-                                         goalDailySeconds: goal.dailySeconds,
-                                         activeWeekdays: goal.activeWeekdayIndices,
-                                         dayLabels: dayLabels,
-                                         squareSize: squareSize)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                let weekCount = max(weekColumns.count, 1)
+                let squareSize = dynamicSquareSize(for: weekCount)
+
+                HStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    ContributionCalendarGrid(weeks: weekColumns,
+                                             goalDailySeconds: goal.dailySeconds,
+                                             activeWeekdays: goal.activeWeekdayIndices,
+                                             dayLabels: dayLabels,
+                                             squareSize: squareSize)
+                        .frame(maxWidth: .infinity)
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity)
             }
             Text("Goal: \(goal.dailyLetterGoal) letters • \(goal.activeWeekdayIndices.count) days per week")
                 .font(.system(size: 12, weight: .bold, design: .rounded))
                 .foregroundColor(ScribbleColors.secondary.opacity(0.8))
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 24)
+        .padding(.vertical, 22)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 36, style: .continuous)
+                .fill(ScribbleColors.surface)
+        )
+        .shadow(color: Color.black.opacity(0.08), radius: 18, x: 0, y: 10)
+    }
+
+    private func dynamicSquareSize(for weekCount: Int) -> CGFloat {
+        switch weekCount {
+        case 0...3: return 34
+        case 4: return 30
+        case 5: return 26
+        default: return 24
+        }
     }
 
     private var calendarWithMonday: Calendar {
@@ -622,7 +740,7 @@ private struct ContributionCalendarGrid: View {
         return formatter
     }()
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .center, spacing: 10) {
             HStack(spacing: 6) {
                 Text("")
                     .frame(width: 36)
@@ -633,6 +751,7 @@ private struct ContributionCalendarGrid: View {
                         .frame(width: squareSize, alignment: .center)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .center)
             ForEach(dayLabels.indices, id: \.self) { dayIndex in
                 HStack(spacing: 6) {
                     Text(dayLabels[dayIndex])
@@ -652,9 +771,10 @@ private struct ContributionCalendarGrid: View {
                             .accessibilityLabel(label(for: day, dayIndex: dayIndex))
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .center)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity)
     }
 
     private func weekLabel(for index: Int) -> String {
