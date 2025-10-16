@@ -9,6 +9,7 @@ struct PracticeSessionView: View {
     let allowFingerInput: Bool
     let isLeftHanded: Bool
     let strokeSize: StrokeSizePreference
+    let difficulty: PracticeDifficulty
     let hapticsEnabled: Bool
     let onStageComplete: (StageOutcome) -> Void
 
@@ -25,6 +26,13 @@ struct PracticeSessionView: View {
     @State private var hasUserDrawn = false
     @State private var evaluationWorkItem: DispatchWorkItem?
     @State private var stageStart = Date()
+    @State private var magnetizedStrokes: Set<Int> = []
+    @State private var magnetizedOffsets: [Int: CGVector] = [:]
+    @State private var lastWarningTime: Date?
+
+    private var profile: PracticeDifficultyProfile {
+        difficulty.profile
+    }
 
     private var rowMetrics: RowMetrics {
         strokeSize.metrics
@@ -85,11 +93,35 @@ struct PracticeSessionView: View {
     }
 
     private var startTolerance: CGFloat {
-        28 * toleranceScale
+        28 * toleranceScale * profile.startToleranceMultiplier
     }
 
     private var deviationTolerance: CGFloat {
-        36 * toleranceScale
+        36 * toleranceScale * profile.deviationToleranceMultiplier
+    }
+
+    private var startSnapRadius: CGFloat {
+        max(startTolerance * profile.startSnapMultiplier, startTolerance * 0.4)
+    }
+
+    private var corridorRadius: CGFloat {
+        deviationTolerance * profile.corridorWidthMultiplier
+    }
+
+    private var corridorSoftLimit: CGFloat {
+        corridorRadius + profile.corridorSoftness
+    }
+
+    private var directionSlackDegrees: CGFloat {
+        profile.directionSlackDegrees
+    }
+
+    private var warningCooldown: TimeInterval {
+        profile.warningCooldown
+    }
+
+    private var hapticStyle: PracticeDifficultyProfile.HapticStyle {
+        profile.hapticStyle
     }
 
     var body: some View {
@@ -116,8 +148,9 @@ struct PracticeSessionView: View {
         }
         .padding(.horizontal, 24)
         .onAppear { resetCanvas() }
-        .onChange(of: stage) { _ in resetCanvas() }
-        .onChange(of: strokeSize) { _ in handleStrokeSizeChange() }
+        .onChange(of: stage) { resetCanvas() }
+        .onChange(of: strokeSize) { handleStrokeSizeChange() }
+        .onChange(of: difficulty) { handleDifficultyChange() }
         .onDisappear { evaluationWorkItem?.cancel() }
     }
 
@@ -148,6 +181,9 @@ struct PracticeSessionView: View {
                                      strokes: scaled.strokes,
                                      progress: strokeProgress,
                                      currentDotIndex: currentDotIndex,
+                                     magnetizedStrokes: magnetizedStrokes,
+                                     showsGuides: profile.showsGuides,
+                                     corridorRadius: corridorRadius,
                                      practiceLineWidth: practiceLineWidth,
                                      guideLineWidth: guideLineWidth,
                                      startDotSize: startDotDiameter)
@@ -165,8 +201,8 @@ struct PracticeSessionView: View {
 
                 if let warningMessage = warningMessage {
                     WarningToast(text: warningMessage)
-                        .padding(.top, verticalInset + 12)
-                        .padding(.horizontal)
+                        .position(x: width / 2,
+                                  y: verticalInset + rowAscender + startDotDiameter * 0.6)
                         .transition(.opacity)
                 }
             } else {
@@ -224,6 +260,9 @@ struct PracticeSessionView: View {
         animationToken += 1
         strokeProgress = Array(repeating: 0, count: scaledTemplate?.strokes.count ?? 0)
         stageStart = Date()
+        magnetizedStrokes.removeAll()
+        magnetizedOffsets.removeAll()
+        lastWarningTime = nil
         startAnimationIfNeeded()
     }
 
@@ -239,10 +278,18 @@ struct PracticeSessionView: View {
         animationToken += 1
         strokeProgress = Array(repeating: 0, count: scaledTemplate?.strokes.count ?? 0)
         stageStart = Date()
+        magnetizedStrokes.removeAll()
+        magnetizedOffsets.removeAll()
+        lastWarningTime = nil
         startAnimationIfNeeded()
     }
 
     private func handleStrokeSizeChange() {
+        scaledTemplate = nil
+        resetCanvas()
+    }
+
+    private func handleDifficultyChange() {
         scaledTemplate = nil
         resetCanvas()
     }
@@ -289,8 +336,12 @@ struct PracticeSessionView: View {
         guard !stageCompleted, let scaledTemplate else { return }
         let evaluator = PracticeEvaluator(template: scaledTemplate,
                                           drawing: drawing,
+                                          profile: profile,
                                           startTolerance: startTolerance,
-                                          deviationTolerance: deviationTolerance)
+                                          corridorRadius: corridorRadius,
+                                          corridorSoftLimit: corridorSoftLimit,
+                                          magnetizedOffsets: magnetizedOffsets,
+                                          directionSlackDegrees: directionSlackDegrees)
         let result = evaluator.evaluate()
         let tips = generateTips(from: result)
         let outcome = StageOutcome(stage: stage,
@@ -315,12 +366,16 @@ struct PracticeSessionView: View {
         if strokes.count > previousStrokeCount, let newStroke = strokes.last {
             let strokeIndex = min(strokes.count - 1, scaledTemplate.strokes.count - 1)
             let templateStroke = scaledTemplate.strokes[strokeIndex]
+            magnetizedOffsets.removeValue(forKey: strokeIndex)
+            magnetizedStrokes.remove(strokeIndex)
             if !checkStartPoint(stroke: newStroke,
                                 strokeIndex: strokeIndex,
                                 templateStroke: templateStroke) {
                 let reverted = StartPointGate.removeLastStroke(from: drawing)
                 self.drawing = reverted
                 previousStrokeCount = reverted.strokes.count
+                magnetizedOffsets.removeValue(forKey: strokeIndex)
+                magnetizedStrokes.remove(strokeIndex)
                 return
             }
             animationToken += 1
@@ -337,60 +392,112 @@ struct PracticeSessionView: View {
                            templateStroke: scaledTemplate.strokes[strokeIndex])
         }
 
-        if stage == .guidedTrace || stage == .dotGuided {
-            let expectedCount = scaledTemplate.strokes.count
-            if strokes.count >= expectedCount {
-                scheduleEvaluation(after: 0.2)
-            }
-        } else {
-            let expectedCount = scaledTemplate.strokes.count
-            if strokes.count >= expectedCount {
-                scheduleEvaluation(after: 0.8)
-            }
+        let expectedCount = scaledTemplate.strokes.count
+        if shouldEvaluateDrawing(strokes: strokes,
+                                 template: scaledTemplate,
+                                 expectedCount: expectedCount) {
+            let delay: TimeInterval = (stage == .guidedTrace || stage == .dotGuided) ? 0.25 : 0.6
+            scheduleEvaluation(after: delay)
         }
     }
 
     @discardableResult
     private func checkStartPoint(stroke: PKStroke, strokeIndex: Int, templateStroke: ScaledStroke) -> Bool {
         guard let firstPoint = stroke.path.firstLocation else { return false }
-        let isValid = StartPointGate.isStartValid(startPoint: firstPoint,
-                                                 expectedStart: templateStroke.startPoint,
-                                                 tolerance: startTolerance)
-        if !isValid {
-            triggerWarning(.init(strokeIndex: strokeIndex, kind: .start),
-                           message: "Start at the green dot")
+        let distance = hypot(firstPoint.x - templateStroke.startPoint.x,
+                             firstPoint.y - templateStroke.startPoint.y)
+
+        if distance <= startSnapRadius {
+            let offset = CGVector(dx: templateStroke.startPoint.x - firstPoint.x,
+                                  dy: templateStroke.startPoint.y - firstPoint.y)
+            magnetizedOffsets[strokeIndex] = offset
+            magnetizedStrokes.insert(strokeIndex)
+            return true
         }
-        return isValid
+
+        if distance <= startTolerance {
+            magnetizedOffsets.removeValue(forKey: strokeIndex)
+            return true
+        }
+
+        let forgivenessLimit = startTolerance * profile.startForgivenessMultiplier
+        if distance <= forgivenessLimit {
+            magnetizedOffsets.removeValue(forKey: strokeIndex)
+            triggerWarning(.init(strokeIndex: strokeIndex, kind: .start),
+                           message: "Start closer to the green dot")
+            return true
+        }
+
+        magnetizedOffsets.removeValue(forKey: strokeIndex)
+        magnetizedStrokes.remove(strokeIndex)
+        triggerWarning(.init(strokeIndex: strokeIndex, kind: .start),
+                       message: "Start at the green dot")
+        return false
     }
 
-    private func checkDeviation(stroke: PKStroke, strokeIndex: Int, templateStroke: ScaledStroke) {
-        let userPoints = stroke.sampledPoints(step: 4)
-        guard !userPoints.isEmpty else { return }
+    private func adjustedPoints(for strokeIndex: Int, points: [CGPoint]) -> [CGPoint] {
+        guard let offset = magnetizedOffsets[strokeIndex], (offset.dx != 0 || offset.dy != 0) else {
+            return points
+        }
+        return points.map { point in
+            CGPoint(x: point.x + offset.dx, y: point.y + offset.dy)
+        }
+    }
 
-        var maxDistance: CGFloat = 0
-        for point in userPoints {
-            var nearest = CGFloat.greatestFiniteMagnitude
-            for templatePoint in templateStroke.sampledPoints {
-                let distance = hypot(point.x - templatePoint.x, point.y - templatePoint.y)
-                nearest = min(nearest, distance)
-                if nearest < deviationTolerance / 2 {
+    private func nearestDistance(from point: CGPoint, to templateStroke: ScaledStroke) -> CGFloat {
+        var nearest = CGFloat.greatestFiniteMagnitude
+        for templatePoint in templateStroke.sampledPoints {
+            let distance = hypot(point.x - templatePoint.x, point.y - templatePoint.y)
+            if distance < nearest {
+                nearest = distance
+                if nearest < corridorRadius * 0.25 {
                     break
                 }
             }
-            maxDistance = max(maxDistance, nearest)
+        }
+        return nearest
+    }
+
+    private func checkDeviation(stroke: PKStroke, strokeIndex: Int, templateStroke: ScaledStroke) {
+        let userPoints = adjustedPoints(for: strokeIndex,
+                                        points: stroke.sampledPoints(step: 4))
+        guard !userPoints.isEmpty else { return }
+
+        var samples: Int = 0
+        var outside: Int = 0
+        var worstDistance: CGFloat = 0
+        for point in userPoints {
+            let distance = nearestDistance(from: point, to: templateStroke)
+            worstDistance = max(worstDistance, distance)
+            if distance > corridorRadius {
+                outside += 1
+            }
+            samples += 1
+            if distance > corridorSoftLimit {
+                break
+            }
         }
 
-        if maxDistance > deviationTolerance {
+        let outsideRatio = samples > 0 ? CGFloat(outside) / CGFloat(samples) : 0
+        if worstDistance > corridorSoftLimit || outsideRatio > 0.45 {
             triggerWarning(.init(strokeIndex: strokeIndex, kind: .deviation),
-                           message: "Stay close to the path")
+                           message: "Stay inside the blue path")
         }
     }
 
     private func triggerWarning(_ identifier: WarningIdentifier, message: String) {
+        _ = identifier
+        let now = Date()
+        let shouldThrottle = lastWarningTime.map { now.timeIntervalSince($0) < warningCooldown } ?? false
+
         warningMessage = message
-        if hapticsEnabled {
-            HapticsManager.shared.warning()
+        if !shouldThrottle {
+            lastWarningTime = now
+            if hapticsEnabled {
+                sendWarningHaptic()
+            }
         }
+
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             if !stageCompleted {
                 withAnimation(.easeInOut(duration: 0.2)) {
@@ -400,15 +507,59 @@ struct PracticeSessionView: View {
         }
     }
 
+    private func shouldEvaluateDrawing(strokes: [PKStroke],
+                                       template: ScaledTemplate,
+                                       expectedCount: Int) -> Bool {
+        if strokes.count >= expectedCount {
+            return true
+        }
+        guard profile.mergedStrokeAllowance > 0 else { return false }
+        let minimumRequired = max(1, expectedCount - profile.mergedStrokeAllowance)
+        guard strokes.count >= minimumRequired else { return false }
+        let evaluator = PracticeEvaluator(template: template,
+                                          drawing: drawing,
+                                          profile: profile,
+                                          startTolerance: startTolerance,
+                                          corridorRadius: corridorRadius,
+                                          corridorSoftLimit: corridorSoftLimit,
+                                          magnetizedOffsets: magnetizedOffsets,
+                                          directionSlackDegrees: directionSlackDegrees)
+        let coverage = evaluator.coverageRatio()
+        return coverage >= profile.completionCoverageThreshold
+    }
+
+    private func sendWarningHaptic() {
+        switch hapticStyle {
+        case .none:
+            break
+        case .soft:
+            HapticsManager.shared.notice()
+        case .warning:
+            HapticsManager.shared.warning()
+        }
+    }
+
     private func generateTips(from result: ScoreResult) -> [TipMessage] {
+        let thresholds = tipThresholds
         var ids: [String] = []
-        if result.start < 80 { ids.append("start-point") }
-        if result.order < 80 { ids.append("stroke-order") }
-        if result.direction < 80 { ids.append("direction") }
-        if result.shape < 80 { ids.append("shape-tighten") }
+        if result.start < thresholds.start { ids.append("start-point") }
+        if result.order < thresholds.order { ids.append("stroke-order") }
+        if result.direction < thresholds.direction { ids.append("direction") }
+        if result.shape < thresholds.shape { ids.append("shape-tighten") }
         return ids.prefix(2).compactMap { id in
             guard let text = TipMessage.catalog[id] else { return nil }
             return TipMessage(id: id, text: text)
+        }
+    }
+
+    private var tipThresholds: (shape: Int, order: Int, direction: Int, start: Int) {
+        switch difficulty {
+        case .beginner:
+            return (shape: 65, order: 60, direction: 60, start: 65)
+        case .intermediate:
+            return (shape: 75, order: 70, direction: 70, start: 75)
+        case .expert:
+            return (shape: 85, order: 80, direction: 80, start: 85)
         }
     }
 }
@@ -418,9 +569,32 @@ private struct PracticeOverlayView: View {
     let strokes: [ScaledStroke]
     let progress: [CGFloat]
     let currentDotIndex: Int
+    let magnetizedStrokes: Set<Int>
+    let showsGuides: Bool
+    let corridorRadius: CGFloat
     let practiceLineWidth: CGFloat
     let guideLineWidth: CGFloat
     let startDotSize: CGFloat
+
+    #if DEBUG
+    private static let showCorridorDebug = false
+    #else
+    private static let showCorridorDebug = false
+    #endif
+
+    private var activeStrokeIndex: Int? {
+        switch stage {
+        case .guidedTrace:
+            if let index = progress.enumerated().first(where: { ($0.element) < 0.999 })?.offset {
+                return index
+            }
+            return strokes.isEmpty ? nil : strokes.indices.last
+        case .dotGuided:
+            return currentDotIndex < strokes.count ? currentDotIndex : nil
+        case .freePractice:
+            return nil
+        }
+    }
 
     var body: some View {
         ZStack {
@@ -429,24 +603,21 @@ private struct PracticeOverlayView: View {
         }
     }
 
+    @ViewBuilder
     private var baseLetterShape: some View {
-        let baseColor = Color(red: 0.55, green: 0.66, blue: 0.94)
-        let opacity: Double
-        switch stage {
-        case .guidedTrace:
-            opacity = 0.35
-        case .dotGuided:
-            opacity = 0.4
-        case .freePractice:
-            opacity = 0.3
-        }
+        if showsGuides && Self.showCorridorDebug {
+            let inactiveColor = Color(red: 0.43, green: 0.59, blue: 0.91).opacity(0.18)
+            let inactiveWidth = max(guideLineWidth * 0.6, 1.0)
 
-        return ForEach(Array(strokes.enumerated()), id: \.offset) { _, stroke in
-            stroke.path
-                .stroke(baseColor.opacity(opacity),
-                        style: StrokeStyle(lineWidth: guideLineWidth,
-                                           lineCap: .round,
-                                           lineJoin: .round))
+            ForEach(Array(strokes.enumerated()), id: \.offset) { index, stroke in
+                let isActive = index == activeStrokeIndex
+                stroke.path
+                    .stroke(isActive ? Color.clear : inactiveColor,
+                            style: StrokeStyle(lineWidth: inactiveWidth,
+                                               lineCap: .round,
+                                               lineJoin: .round,
+                                               dash: stage == .dotGuided ? [6, 8] : []))
+            }
         }
     }
 
@@ -455,34 +626,61 @@ private struct PracticeOverlayView: View {
         switch stage {
         case .guidedTrace:
             ForEach(Array(strokes.enumerated()), id: \.offset) { index, stroke in
+                let isActive = index == activeStrokeIndex
+                let progressValue = min(progress[safe: index] ?? 0, 1)
+                let outline: (Color, CGFloat) = {
+                    if showsGuides {
+                        let color = isActive ? Color(red: 0.19, green: 0.39, blue: 0.92) : Color(red: 0.19, green: 0.39, blue: 0.92).opacity(0.25)
+                        let width = isActive ? practiceLineWidth : guideLineWidth * 0.7
+                        return (color, width)
+                    } else {
+                        let color = Color(red: 0.19, green: 0.39, blue: 0.92).opacity(isActive ? 0.55 : 0.12)
+                        let width = practiceLineWidth * (isActive ? 0.85 : 0.5)
+                        return (color, width)
+                    }
+                }()
+                let outlineColor = outline.0
+                let outlineWidth = outline.1
+
                 stroke.path
-                    .trim(from: 0, to: min(progress[safe: index] ?? 0, 1))
-                    .stroke(Color(red: 0.22, green: 0.44, blue: 0.98),
-                            style: StrokeStyle(lineWidth: practiceLineWidth,
+                    .trim(from: 0, to: progressValue)
+                    .stroke(outlineColor,
+                            style: StrokeStyle(lineWidth: outlineWidth,
                                                lineCap: .round,
                                                lineJoin: .round))
-                StartDot(position: stroke.startPoint, diameter: startDotSize)
+                if showsGuides {
+                    let isMagnetized = magnetizedStrokes.contains(index)
+                    StartDot(position: stroke.startPoint,
+                             diameter: startDotSize,
+                             isHighlighted: isMagnetized)
+                }
             }
         case .dotGuided:
-            ForEach(Array(strokes.enumerated()), id: \.offset) { index, stroke in
-                stroke.path
-                    .stroke(Color(red: 0.53, green: 0.65, blue: 0.98).opacity(0.5),
-                            style: StrokeStyle(lineWidth: guideLineWidth,
-                                               lineCap: .round,
-                                               lineJoin: .round,
-                                               dash: [10, 12]))
-                if index == currentDotIndex {
-                    StartDot(position: stroke.startPoint, diameter: startDotSize)
-                        .scaleEffect(1.15)
+            if showsGuides {
+                ForEach(Array(strokes.enumerated()), id: \.offset) { index, stroke in
+                    let isActive = index == activeStrokeIndex
+                    let color = isActive ? Color(red: 0.23, green: 0.45, blue: 0.9) : Color(red: 0.23, green: 0.45, blue: 0.9).opacity(0.28)
+                    stroke.path
+                        .stroke(color,
+                                style: StrokeStyle(lineWidth: guideLineWidth * 0.8,
+                                                   lineCap: .round,
+                                                   lineJoin: .round,
+                                                   dash: [5, 6]))
+                    let shouldHighlight = index == currentDotIndex || magnetizedStrokes.contains(index)
+                    StartDot(position: stroke.startPoint,
+                             diameter: startDotSize,
+                             isHighlighted: shouldHighlight)
                 }
             }
         case .freePractice:
-            ForEach(Array(strokes.enumerated()), id: \.offset) { _, stroke in
-                stroke.path
-                    .stroke(Color(red: 0.37, green: 0.55, blue: 0.94).opacity(0.35),
-                            style: StrokeStyle(lineWidth: guideLineWidth,
-                                               lineCap: .round,
-                                               lineJoin: .round))
+            if showsGuides {
+                ForEach(Array(strokes.enumerated()), id: \.offset) { _, stroke in
+                    stroke.path
+                        .stroke(Color(red: 0.37, green: 0.55, blue: 0.94).opacity(0.25),
+                                style: StrokeStyle(lineWidth: guideLineWidth * 0.75,
+                                                   lineCap: .round,
+                                                   lineJoin: .round))
+                }
             }
         }
     }
@@ -491,6 +689,7 @@ private struct PracticeOverlayView: View {
 private struct StartDot: View {
     let position: CGPoint
     let diameter: CGFloat
+    let isHighlighted: Bool
 
     var body: some View {
         Circle()
@@ -500,6 +699,9 @@ private struct StartDot: View {
                     .stroke(Color.white, lineWidth: 2)
             )
             .frame(width: diameter, height: diameter)
+            .scaleEffect(isHighlighted ? 1.18 : 1.0)
+            .shadow(color: Color(red: 0.35, green: 0.8, blue: 0.46).opacity(isHighlighted ? 0.35 : 0),
+                    radius: isHighlighted ? 10 : 0)
             .position(position)
     }
 }
@@ -566,9 +768,9 @@ private struct TargetLetterLoopView: View {
             }
         }
         .onAppear { startLoop() }
-        .onChange(of: animationToken) { _ in startLoop() }
-        .onChange(of: stage) { _ in startLoop() }
-        .onChange(of: shouldAnimate) { newValue in
+        .onChange(of: animationToken) { startLoop() }
+        .onChange(of: stage) { startLoop() }
+        .onChange(of: shouldAnimate) { _, newValue in
             if newValue {
                 startLoop()
             } else if let scaledTemplate {
@@ -713,23 +915,27 @@ struct ScaledStroke: Identifiable, Equatable {
 struct PracticeEvaluator {
     let template: ScaledTemplate
     let drawing: PKDrawing
+    let profile: PracticeDifficultyProfile
     let startTolerance: CGFloat
-    let deviationTolerance: CGFloat
+    let corridorRadius: CGFloat
+    let corridorSoftLimit: CGFloat
+    let magnetizedOffsets: [Int: CGVector]
+    let directionSlackDegrees: CGFloat
 
     func evaluate() -> ScoreResult {
         guard !drawing.strokes.isEmpty else {
             return ScoreResult(total: 0, shape: 0, order: 0, direction: 0, start: 0)
         }
 
+        let shapeScore = scoreShape()
         let orderScore = scoreOrder()
         let directionScore = scoreDirection()
-        let shapeScore = scoreShape()
         let startScore = scoreStart()
 
-        let total = Int(round(0.40 * Double(shapeScore)
+        let total = Int(round(0.45 * Double(shapeScore)
                               + 0.25 * Double(orderScore)
                               + 0.20 * Double(directionScore)
-                              + 0.15 * Double(startScore)))
+                              + 0.10 * Double(startScore)))
 
         return ScoreResult(total: total,
                            shape: shapeScore,
@@ -738,87 +944,245 @@ struct PracticeEvaluator {
                            start: startScore)
     }
 
-    private func scoreOrder() -> Int {
-        let expectedStrokes = template.strokes
-        let actualStrokes = drawing.strokes
-        guard !expectedStrokes.isEmpty, !actualStrokes.isEmpty else { return 0 }
+    private func scoreShape() -> Int {
+        guard let metrics = computeShapeMetrics() else { return 0 }
+        guard metrics.totalSamples > 0 else { return 0 }
 
-        var matched = 0
-        for index in 0..<min(expectedStrokes.count, actualStrokes.count) {
-            guard let actualStart = actualStrokes[index].path.firstLocation else { continue }
-            let expectedStart = expectedStrokes[index].startPoint
-            let distance = hypot(actualStart.x - expectedStart.x, actualStart.y - expectedStart.y)
-            if distance <= startTolerance {
-                matched += 1
+        let insideRatio = metrics.inside / metrics.totalSamples
+        let outsideRatio = metrics.outside / metrics.totalSamples
+        let overflowAverage = metrics.outside > 0 ? metrics.overflow / metrics.outside : 0
+        let softBand = max(corridorSoftLimit - corridorRadius, 1)
+        let overflowNormalized = min(1, overflowAverage / softBand)
+
+        let tightening = CGFloat(profile.evaluationTighteningRate)
+        var final = max(0, min(1, insideRatio - tightening * overflowNormalized - tightening * 0.4 * outsideRatio))
+
+        let completionRatio = min(1, CGFloat(metrics.actualCount) / CGFloat(metrics.expectedCount))
+        final *= completionRatio
+
+        if metrics.actualCount > metrics.expectedCount {
+            let extra = metrics.actualCount - metrics.expectedCount
+            let extraPenalty = tightening * 0.08 * min(1, CGFloat(extra) / CGFloat(metrics.expectedCount + extra))
+            final = max(0, final - extraPenalty)
+        }
+
+        return Int(round(final * 100))
+    }
+
+    func coverageRatio() -> Double {
+        guard let metrics = computeShapeMetrics(), metrics.totalSamples > 0 else { return 0 }
+        return Double(metrics.inside / metrics.totalSamples)
+    }
+
+    private struct ShapeMetrics {
+        let inside: CGFloat
+        let outside: CGFloat
+        let overflow: CGFloat
+        let totalSamples: CGFloat
+        let expectedCount: Int
+        let actualCount: Int
+    }
+
+    private func computeShapeMetrics() -> ShapeMetrics? {
+        let expected = template.strokes
+        let actual = drawing.strokes
+        guard !expected.isEmpty, !actual.isEmpty else { return nil }
+
+        let comparisons = min(expected.count, actual.count)
+        var inside: CGFloat = 0
+        var outside: CGFloat = 0
+        var overflow: CGFloat = 0
+
+        for index in 0..<comparisons {
+            let expectedStroke = expected[index]
+            let points = adjustedPoints(for: actual[index], index: index, step: 4)
+            if points.isEmpty { continue }
+            for point in points {
+                let distance = nearestDistance(from: point, to: expectedStroke)
+                if distance <= corridorRadius {
+                    inside += 1
+                } else {
+                    outside += 1
+                    overflow += max(0, distance - corridorRadius)
+                }
             }
         }
 
-        let expectedCount = expectedStrokes.count
-        let extraStrokes = max(0, actualStrokes.count - expectedCount)
-        let penalties = max(0, expectedCount - matched) + extraStrokes
-        let effectiveMatches = max(0, expectedCount - penalties)
-        return Int((Double(effectiveMatches) / Double(expectedCount)) * 100)
+        let totalSamples = inside + outside
+        return ShapeMetrics(inside: inside,
+                            outside: outside,
+                            overflow: overflow,
+                            totalSamples: totalSamples,
+                            expectedCount: expected.count,
+                            actualCount: actual.count)
     }
 
-    private func scoreDirection() -> Int {
-        let expectedStrokes = template.strokes
-        let actualStrokes = drawing.strokes
-        guard !expectedStrokes.isEmpty, !actualStrokes.isEmpty else { return 0 }
+    private func scoreOrder() -> Int {
+        let expected = template.strokes
+        let actual = drawing.strokes
+        guard !expected.isEmpty, !actual.isEmpty else { return 0 }
 
-        let comparisons = min(expectedStrokes.count, actualStrokes.count)
-        var total: Double = 0
-        var validComparisons = 0
+        let tolerance = startTolerance * (profile.preservesMistakeStroke ? 1.3 : 1.1)
+        var matchedExpected = Set<Int>()
+        var assignments: [Int] = []
 
-        for index in 0..<comparisons {
-            guard let expectedRaw = expectedStrokes[index].directionVector,
-                  let actualRaw = actualStrokes[index].directionVector else { continue }
+        for (actualIndex, stroke) in actual.enumerated() {
+            guard let start = adjustedStartPoint(for: stroke, index: actualIndex) else { continue }
+            var bestIndex: Int?
+            var bestDistance = CGFloat.greatestFiniteMagnitude
+            for (expectedIndex, expectedStroke) in expected.enumerated() {
+                let distance = hypot(start.x - expectedStroke.startPoint.x,
+                                     start.y - expectedStroke.startPoint.y)
+                if distance < bestDistance {
+                    bestDistance = distance
+                    bestIndex = expectedIndex
+                }
+            }
 
-            let expectedVector = expectedRaw.normalized()
-            let actualVector = actualRaw.normalized()
-            if expectedVector.isZero || actualVector.isZero { continue }
-
-            let dot = max(-1.0, min(1.0, expectedVector.dot(actualVector)))
-            total += (dot + 1) / 2
-            validComparisons += 1
+            guard let bestIndex, bestDistance <= tolerance * 1.8 else { continue }
+            assignments.append(bestIndex)
+            if bestDistance <= tolerance {
+                matchedExpected.insert(bestIndex)
+            }
         }
 
-        guard validComparisons == expectedStrokes.count else { return 0 }
-        return Int((total / Double(validComparisons)) * 100)
-    }
-
-    private func scoreShape() -> Int {
-        let expectedStrokes = template.strokes
-        let actualStrokes = drawing.strokes
-        guard !expectedStrokes.isEmpty, !actualStrokes.isEmpty else {
+        if assignments.isEmpty {
             return 0
         }
 
-        let comparisons = zip(expectedStrokes, actualStrokes)
-        var totalDistance: CGFloat = 0
-        var samples: Int = 0
-
-        for (expected, actual) in comparisons {
-            let userPoints = actual.sampledPoints(step: 6)
-            for point in userPoints {
-                let nearest = expected.sampledPoints.map {
-                    hypot(point.x - $0.x, point.y - $0.y)
-                }.min() ?? deviationTolerance * 2
-                totalDistance += min(nearest, deviationTolerance * 2)
-                samples += 1
+        let coverage = Double(matchedExpected.count) / Double(expected.count)
+        var orderViolations = 0
+        for pair in zip(assignments, assignments.dropFirst()) {
+            if pair.1 < pair.0 {
+                orderViolations += 1
             }
         }
 
-        guard samples > 0 else { return 0 }
-        let average = totalDistance / CGFloat(samples)
-        return max(0, 100 - Int((average / deviationTolerance) * 100))
+        let extras = max(0, assignments.count - expected.count)
+        let penalizedExtras = max(0, extras - profile.mergedStrokeAllowance)
+
+        let tightening = Double(profile.evaluationTighteningRate)
+        let violationPenalty = tightening * Double(orderViolations) / Double(max(expected.count - 1, 1))
+        let extraPenalty = tightening * 0.6 * Double(penalizedExtras) / Double(expected.count)
+
+        let score = max(0, min(1, coverage - violationPenalty - extraPenalty))
+        return Int(round(score * 100))
+    }
+
+    private func scoreDirection() -> Int {
+        let expected = template.strokes
+        let actual = drawing.strokes
+        guard !expected.isEmpty, !actual.isEmpty else { return 0 }
+
+        let comparisons = min(expected.count, actual.count)
+        var excessAngles: [Double] = []
+
+        for index in 0..<comparisons {
+            let expectedVectors = keyDirectionVectors(for: expected[index])
+            let actualVectors = keyDirectionVectors(for: actual[index], index: index)
+            guard !expectedVectors.isEmpty, expectedVectors.count == actualVectors.count else { continue }
+
+            for (expectedVector, actualVector) in zip(expectedVectors, actualVectors) {
+                let diff = angleDifferenceDegrees(expectedVector, actualVector)
+                let slack = Double(directionSlackDegrees)
+                let excess = max(0, diff - slack)
+                excessAngles.append(excess)
+            }
+        }
+
+        guard !excessAngles.isEmpty else { return 100 }
+
+        let averageExcess = excessAngles.reduce(0, +) / Double(excessAngles.count)
+        let normalized = min(1, averageExcess / 90)
+        let tightening = Double(profile.evaluationTighteningRate)
+        let baseScore = max(0, 1 - normalized * tightening)
+        let completionRatio = min(1, Double(actual.count) / Double(expected.count))
+        return Int(round(baseScore * completionRatio * 100))
     }
 
     private func scoreStart() -> Int {
         guard let expected = template.strokes.first else { return 0 }
-        guard let actual = drawing.strokes.first?.path.firstLocation else { return 0 }
-        let distance = hypot(actual.x - expected.startPoint.x, actual.y - expected.startPoint.y)
-        if distance <= startTolerance { return 100 }
-        return max(0, 100 - Int((distance - startTolerance)))
+        guard let actualStroke = drawing.strokes.first else { return 0 }
+        guard let actualStart = adjustedStartPoint(for: actualStroke, index: 0) else { return 0 }
+
+        let distance = hypot(actualStart.x - expected.startPoint.x,
+                             actualStart.y - expected.startPoint.y)
+        if distance <= startTolerance {
+            return 100
+        }
+        let overshoot = max(0, distance - startTolerance)
+        let scale = max(startTolerance, 1)
+        let penalty = min(90, Int(round((overshoot / scale) * 55)))
+        return max(0, 100 - penalty)
+    }
+
+    private func magnetizedOffset(for index: Int) -> CGVector {
+        magnetizedOffsets[index] ?? .zero
+    }
+
+    private func adjustedPoints(for stroke: PKStroke, index: Int, step: Int) -> [CGPoint] {
+        let points = stroke.sampledPoints(step: step)
+        let offset = magnetizedOffset(for: index)
+        guard offset.dx != 0 || offset.dy != 0 else { return points }
+        return points.map { point in
+            CGPoint(x: point.x + offset.dx, y: point.y + offset.dy)
+        }
+    }
+
+    private func adjustedStartPoint(for stroke: PKStroke, index: Int) -> CGPoint? {
+        guard let start = stroke.path.firstLocation else { return nil }
+        let offset = magnetizedOffset(for: index)
+        return CGPoint(x: start.x + offset.dx, y: start.y + offset.dy)
+    }
+
+    private func nearestDistance(from point: CGPoint, to stroke: ScaledStroke) -> CGFloat {
+        var nearest = CGFloat.greatestFiniteMagnitude
+        for templatePoint in stroke.sampledPoints {
+            let distance = hypot(point.x - templatePoint.x, point.y - templatePoint.y)
+            if distance < nearest {
+                nearest = distance
+                if nearest < corridorRadius * 0.25 {
+                    break
+                }
+            }
+        }
+        return nearest
+    }
+
+    private func keyDirectionVectors(for stroke: ScaledStroke) -> [CGVector] {
+        directionVectors(from: stroke.points)
+    }
+
+    private func keyDirectionVectors(for stroke: PKStroke, index: Int) -> [CGVector] {
+        directionVectors(from: adjustedPoints(for: stroke, index: index, step: 3))
+    }
+
+    private func directionVectors(from points: [CGPoint]) -> [CGVector] {
+        guard points.count >= 4 else { return [] }
+        let fractions: [Double] = [0.1, 0.35, 0.6, 0.85]
+        return fractions.compactMap { fraction in
+            let rawIndex = Int(round(fraction * Double(points.count - 2)))
+            let index = min(max(rawIndex, 0), points.count - 2)
+            let start = points[index]
+            let end = points[index + 1]
+            return normalizedVector(dx: end.x - start.x, dy: end.y - start.y)
+        }
+    }
+
+    private func normalizedVector(dx: CGFloat, dy: CGFloat) -> CGVector? {
+        let magnitude = hypot(dx, dy)
+        guard magnitude > 0 else { return nil }
+        return CGVector(dx: dx / magnitude, dy: dy / magnitude)
+    }
+
+    private func angleDifferenceDegrees(_ a: CGVector, _ b: CGVector) -> Double {
+        let angleA = atan2(Double(a.dy), Double(a.dx))
+        let angleB = atan2(Double(b.dy), Double(b.dx))
+        var diff = abs(angleA - angleB)
+        if diff > .pi {
+            diff = (2 * .pi) - diff
+        }
+        return diff * 180 / .pi
     }
 }
 

@@ -111,6 +111,7 @@ final class PracticeDataStore: ObservableObject {
     func updateStrokeSize(_ size: StrokeSizePreference) {
         settings.strokeSize = size
         settings.difficulty = difficulty(for: size)
+        settings.prefersGuides = settings.difficulty.profile.showsGuides
         saveSnapshot()
     }
 
@@ -122,6 +123,7 @@ final class PracticeDataStore: ObservableObject {
     func updateDifficulty(_ difficulty: PracticeDifficulty) {
         settings.difficulty = difficulty
         settings.strokeSize = strokeSize(for: difficulty)
+        settings.prefersGuides = difficulty.profile.showsGuides
         saveSnapshot()
     }
 
@@ -253,14 +255,14 @@ final class PracticeDataStore: ObservableObject {
         )
     }
 
-    func awardXP(amount: Int,
-                 category: XPEvent.Category,
-                 letterId: String? = nil,
-                 note: String? = nil,
-                 at date: Date = Date()) {
-        guard amount > 0 else { return }
-        let cappedAmount = min(amount, 9_999)
-        let event = XPEvent(amount: cappedAmount,
+    func addWritingSeconds(_ seconds: Int,
+                           category: XPEvent.Category,
+                           letterId: String? = nil,
+                           note: String? = nil,
+                           at date: Date = Date()) {
+        guard seconds > 0 else { return }
+        let capped = min(seconds, 9_999)
+        let event = XPEvent(amount: capped,
                             createdAt: date,
                             category: category,
                             letterId: letterId,
@@ -275,6 +277,14 @@ final class PracticeDataStore: ObservableObject {
         saveSnapshot()
     }
 
+    func updateGoalSeconds(_ seconds: Int) {
+        var goal = profile.goal
+        let minimum = PracticeGoal.secondsPerLetter
+        let adjusted = max(minimum, seconds - (seconds % PracticeGoal.secondsPerLetter))
+        goal.dailySeconds = adjusted
+        updateGoal(goal)
+    }
+
     func updateAvatarSeed(_ seed: String) {
         profile.avatarSeed = seed
         saveSnapshot()
@@ -285,26 +295,26 @@ final class PracticeDataStore: ObservableObject {
         saveSnapshot()
     }
 
-    func xpEarned(on date: Date) -> Int {
+    func secondsSpent(on date: Date) -> Int {
         let anchor = startOfDay(for: date)
-        return xpTotalsByDay()[anchor, default: 0]
+        return secondsTotalsByDay()[anchor, default: 0]
     }
 
     func dailyProgressRatio(for date: Date = Date()) -> Double {
-        let goal = max(profile.goal.dailyXP, 1)
+        let goal = max(profile.goal.dailySeconds, 1)
         guard goal > 0 else { return 0 }
-        return min(Double(xpEarned(on: date)) / Double(goal), 1)
+        return min(Double(secondsSpent(on: date)) / Double(goal), 1)
     }
 
     func didHitGoal(on date: Date) -> Bool {
-        guard profile.goal.dailyXP > 0 else { return false }
-        return xpEarned(on: date) >= profile.goal.dailyXP
+        guard profile.goal.dailySeconds > 0 else { return false }
+        return secondsSpent(on: date) >= profile.goal.dailySeconds
     }
 
     func contributions(forDays days: Int = 42, endingAt endDate: Date = Date()) -> [ContributionDay] {
         guard days > 0 else { return [] }
-        let goal = profile.goal.dailyXP
-        let xpByDay = xpTotalsByDay()
+        let goal = profile.goal.dailySeconds
+        let secondsByDay = secondsTotalsByDay()
         let endAnchor = startOfDay(for: endDate)
         var contributions: [ContributionDay] = []
         contributions.reserveCapacity(days)
@@ -312,10 +322,10 @@ final class PracticeDataStore: ObservableObject {
         for offset in stride(from: days - 1, through: 0, by: -1) {
             guard let date = calendar.date(byAdding: .day, value: -offset, to: endAnchor) else { continue }
             let anchor = startOfDay(for: date)
-            let earned = xpByDay[anchor, default: 0]
+            let earned = secondsByDay[anchor, default: 0]
             contributions.append(ContributionDay(date: anchor,
-                                                 xpEarned: earned,
-                                                 goalXP: goal))
+                                                 secondsSpent: earned,
+                                                 goalSeconds: goal))
         }
         return contributions
     }
@@ -323,17 +333,53 @@ final class PracticeDataStore: ObservableObject {
     func todayContribution() -> ContributionDay {
         let today = startOfDay(for: Date())
         return ContributionDay(date: today,
-                               xpEarned: xpEarned(on: today),
-                               goalXP: profile.goal.dailyXP)
+                               secondsSpent: secondsSpent(on: today),
+                               goalSeconds: profile.goal.dailySeconds)
     }
 
     func weeklyGoalSummary(endingAt date: Date = Date()) -> (hits: Int, target: Int) {
         let recent = contributions(forDays: 7, endingAt: date)
-        let hits = recent.filter { $0.didHitGoal }.count
-        return (hits, profile.goal.activeDaysPerWeek)
+        let goalWeekdays = profile.goal.activeWeekdayIndices
+        let hits = recent.filter { day in
+            let weekday = weekdayIndex(for: day.date)
+            return goalWeekdays.contains(weekday) && day.didHitGoal
+        }.count
+        return (hits, goalWeekdays.count)
     }
 
-    private func xpTotalsByDay() -> [Date: Int] {
+    func currentStreak(asOf date: Date = Date(), lookbackDays: Int = 180) -> Int {
+        let goal = profile.goal
+        let goalWeekdays = goal.activeWeekdayIndices
+        guard goal.dailySeconds > 0, !goalWeekdays.isEmpty else {
+            return 0
+        }
+
+        let secondsByDay = secondsTotalsByDay()
+        var streak = 0
+        var checked = 0
+        var cursor = startOfDay(for: date)
+
+        while checked < lookbackDays {
+            let weekday = weekdayIndex(for: cursor)
+            if goalWeekdays.contains(weekday) {
+                let total = secondsByDay[cursor, default: 0]
+                if total >= goal.dailySeconds {
+                    streak += 1
+                } else {
+                    break
+                }
+            }
+            guard let previous = calendar.date(byAdding: .day, value: -1, to: cursor) else {
+                break
+            }
+            cursor = previous
+            checked += 1
+        }
+
+        return streak
+    }
+
+    private func secondsTotalsByDay() -> [Date: Int] {
         xpEvents.reduce(into: [:]) { partialResult, event in
             let day = startOfDay(for: event.createdAt)
             partialResult[day, default: 0] += event.amount
@@ -344,19 +390,16 @@ final class PracticeDataStore: ObservableObject {
         calendar.startOfDay(for: date)
     }
 
+    private func weekdayIndex(for date: Date) -> Int {
+        let weekday = calendar.component(.weekday, from: date)
+        return (weekday + 5) % 7
+    }
+
     private func strokeSize(for difficulty: PracticeDifficulty) -> StrokeSizePreference {
-        switch difficulty {
-        case .easy: return .large
-        case .medium: return .standard
-        case .hard: return .compact
-        }
+        difficulty.profile.strokeSize
     }
 
     private func difficulty(for strokeSize: StrokeSizePreference) -> PracticeDifficulty {
-        switch strokeSize {
-        case .large: return .easy
-        case .standard: return .medium
-        case .compact: return .hard
-        }
+        PracticeDifficulty.allCases.first(where: { $0.profile.strokeSize == strokeSize }) ?? .intermediate
     }
 }

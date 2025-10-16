@@ -92,6 +92,7 @@ struct PracticeFlowView: View {
     @State private var isSessionComplete = false
     @State private var letterTemplates: [String: HandwritingTemplate] = [:]
     @State private var showSettingsSheet = false
+    @State private var showQuickSettingsMenu = false
     @State private var hasInitialized = false
 
     init(startingLetter: String? = nil) {
@@ -115,6 +116,20 @@ struct PracticeFlowView: View {
     private var sessionIdentity: String {
         let handed = dataStore.settings.isLeftHanded ? "L" : "R"
         return "\(currentLetterId)|\(currentStrokeSize.rawValue)|\(handed)"
+    }
+
+    private var inputPreferenceBinding: Binding<InputPreference> {
+        Binding(
+            get: { dataStore.settings.inputPreference },
+            set: { dataStore.updateInputPreference($0) }
+        )
+    }
+
+    private var leftHandBinding: Binding<Bool> {
+        Binding(
+            get: { dataStore.settings.isLeftHanded },
+            set: { dataStore.updateLeftHanded($0) }
+        )
     }
 
     var body: some View {
@@ -145,6 +160,7 @@ struct PracticeFlowView: View {
                                         allowFingerInput: allowFingerInput,
                                         isLeftHanded: dataStore.settings.isLeftHanded,
                                         strokeSize: currentStrokeSize,
+                                        difficulty: dataStore.settings.difficulty,
                                         hapticsEnabled: dataStore.settings.hapticsEnabled,
                                         onStageComplete: handleStageOutcome)
                         .padding(.vertical, 24)
@@ -166,36 +182,27 @@ struct PracticeFlowView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Picker("Drawing input", selection: Binding(
-                        get: { dataStore.settings.inputPreference },
-                        set: { dataStore.updateInputPreference($0) }
-                    )) {
-                        ForEach(InputPreference.allCases) { option in
-                            Text(option.title).tag(option)
-                        }
-                    }
-
-                    Button {
-                        toggleHandedness()
-                    } label: {
-                        Label(dataStore.settings.isLeftHanded ? "Use right-handed guides" : "Use left-handed guides",
-                              systemImage: "hand.raised")
-                    }
-
-                    Divider()
-
-                    Button {
-                        showSettingsSheet = true
-                    } label: {
-                        Label("Settings", systemImage: "gearshape")
-                    }
+                Button {
+                    showQuickSettingsMenu = true
                 } label: {
                     Image(systemName: "slider.horizontal.3")
                         .font(.title3.weight(.semibold))
                         .foregroundColor(Color(red: 0.32, green: 0.39, blue: 0.54))
                 }
+                .buttonStyle(.plain)
             }
+        }
+        .sheet(isPresented: $showQuickSettingsMenu) {
+            PracticeQuickSettingsSheet(
+                inputPreference: inputPreferenceBinding,
+                isLeftHanded: leftHandBinding,
+                onOpenSettings: {
+                    showQuickSettingsMenu = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        showSettingsSheet = true
+                    }
+                }
+            )
         }
         .sheet(isPresented: $showSettingsSheet) {
             SettingsView()
@@ -213,13 +220,13 @@ struct PracticeFlowView: View {
                 }
             }
         }
-        .onChange(of: dataStore.settings.strokeSize) { _ in
+        .onChange(of: dataStore.settings.strokeSize) {
             resetForCurrentLetter(startNewAttempt: true)
         }
-        .onChange(of: dataStore.settings.isLeftHanded) { _ in
+        .onChange(of: dataStore.settings.isLeftHanded) {
             resetForCurrentLetter(startNewAttempt: true)
         }
-        .onChange(of: dataStore.settings.inputPreference) { _ in
+        .onChange(of: dataStore.settings.inputPreference) {
             resetForCurrentLetter(startNewAttempt: false)
         }
     }
@@ -405,10 +412,6 @@ struct PracticeFlowView: View {
         loadTemplate()
     }
 
-    private func toggleHandedness() {
-        dataStore.updateLeftHanded(!dataStore.settings.isLeftHanded)
-    }
-
     private func aggregateScore() -> ScoreResult? {
         let orderedStages = PracticeStage.allCases
         let outcomes = orderedStages.compactMap { stageResults[$0] }
@@ -489,6 +492,129 @@ struct PracticeFlowView: View {
             return .pending
         }
         return outcome.aggregatedScore.total >= 80 ? .passed : .failed
+    }
+}
+
+private struct PracticeQuickSettingsSheet: View {
+    @Binding var inputPreference: InputPreference
+    @Binding var isLeftHanded: Bool
+    let onOpenSettings: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 24) {
+            Capsule()
+                .fill(Color.black.opacity(0.12))
+                .frame(width: 58, height: 6)
+                .padding(.top, 16)
+
+            VStack(spacing: 10) {
+                Text("Quick practice settings")
+                    .font(.system(size: 28, weight: .heavy, design: .rounded))
+                    .foregroundColor(ScribbleColors.primary)
+
+                Text("Change how you draw and which guides show up.")
+                    .font(.system(size: 18, weight: .medium, design: .rounded))
+                    .foregroundColor(ScribbleColors.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+            }
+
+            VStack(alignment: .leading, spacing: 18) {
+                Text("Drawing input")
+                    .font(.system(size: 20, weight: .heavy, design: .rounded))
+                    .foregroundColor(ScribbleColors.primary)
+
+                VStack(spacing: 14) {
+                    ForEach(InputPreference.allCases) { option in
+                        ScribbleSelectableOption(
+                            title: option.title,
+                            subtitle: subtitle(for: option),
+                            systemName: icon(for: option),
+                            tint: tint(for: option),
+                            isSelected: inputPreference == option
+                        ) {
+                            inputPreference = option
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 24)
+
+            Toggle(isOn: $isLeftHanded) {
+                Text("Left-handed mode")
+                    .font(.system(size: 20, weight: .heavy, design: .rounded))
+                    .foregroundColor(ScribbleColors.primary)
+            }
+            .toggleStyle(ScribbleToggleStyle())
+            .padding(.horizontal, 24)
+            .accessibilityHint("Mirrors practice overlays and repositions buttons.")
+
+            Button {
+                dismiss()
+                onOpenSettings()
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "gearshape.fill")
+                        .font(.system(size: 20, weight: .bold))
+                    Text("Open full settings")
+                        .font(.system(size: 20, weight: .heavy, design: .rounded))
+                }
+                .foregroundColor(ScribbleColors.accentDark)
+                .padding(.horizontal, 26)
+                .padding(.vertical, 16)
+                .frame(maxWidth: .infinity)
+                .background(
+                    RoundedRectangle(cornerRadius: ScribbleSpacing.cornerRadiusMedium, style: .continuous)
+                        .fill(ScribbleColors.accent.opacity(0.35))
+                )
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 24)
+
+            Button {
+                dismiss()
+            } label: {
+                Text("Done")
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .foregroundColor(ScribbleColors.secondary)
+                    .padding(.bottom, 12)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.bottom, 24)
+        .background(
+            ScribbleColors.cardBackground
+                .ignoresSafeArea()
+        )
+    }
+
+    private func subtitle(for preference: InputPreference) -> String {
+        switch preference {
+        case .pencilOnly:
+            return "Best for crisp strokes and pressure control."
+        case .fingerAndPencil:
+            return "Great when sharing or practicing without Pencil."
+        }
+    }
+
+    private func icon(for preference: InputPreference) -> String {
+        switch preference {
+        case .pencilOnly:
+            return "pencil.tip"
+        case .fingerAndPencil:
+            return "hand.draw"
+        }
+    }
+
+    private func tint(for preference: InputPreference) -> Color {
+        switch preference {
+        case .pencilOnly:
+            return Color(red: 0.83, green: 0.91, blue: 1.0)
+        case .fingerAndPencil:
+            return Color(red: 0.87, green: 0.96, blue: 0.87)
+        }
     }
 }
 

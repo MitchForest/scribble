@@ -1,8 +1,20 @@
 import SwiftUI
 
 struct ContentView: View {
+    @EnvironmentObject private var dataStore: PracticeDataStore
+    @State private var showOnboarding = true
+
     var body: some View {
-        HomeView()
+        Group {
+            if showOnboarding {
+                OnboardingFlowView {
+                    showOnboarding = false
+                }
+                .environmentObject(dataStore)
+            } else {
+                HomeView()
+            }
+        }
     }
 }
 

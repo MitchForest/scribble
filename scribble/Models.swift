@@ -53,17 +53,102 @@ struct StageOutcome {
 }
 
 enum PracticeDifficulty: String, Codable, CaseIterable, Identifiable {
-    case easy
-    case medium
-    case hard
+    case beginner
+    case intermediate
+    case expert
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .easy: return "Easy"
-        case .medium: return "Medium"
-        case .hard: return "Hard"
+        case .beginner: return "Beginner"
+        case .intermediate: return "Intermediate"
+        case .expert: return "Expert"
+        }
+    }
+}
+
+struct PracticeDifficultyProfile {
+    enum HapticStyle {
+        case none
+        case soft
+        case warning
+    }
+
+    let strokeSize: StrokeSizePreference
+    let corridorWidthMultiplier: CGFloat
+    let corridorSoftness: CGFloat
+    let startToleranceMultiplier: CGFloat
+    let deviationToleranceMultiplier: CGFloat
+    let startSnapMultiplier: CGFloat
+    let warningCooldown: TimeInterval
+    let preservesMistakeStroke: Bool
+    let hapticStyle: HapticStyle
+    let directionSlackDegrees: CGFloat
+    let mergedStrokeAllowance: Int
+    let evaluationTighteningRate: CGFloat
+    let showsGuides: Bool
+    let completionCoverageThreshold: Double
+    let startForgivenessMultiplier: CGFloat
+}
+
+extension PracticeDifficulty {
+    var profile: PracticeDifficultyProfile {
+        switch self {
+        case .beginner:
+            return PracticeDifficultyProfile(
+                strokeSize: .large,
+                corridorWidthMultiplier: 1.45,
+                corridorSoftness: 18,
+                startToleranceMultiplier: 1.7,
+                deviationToleranceMultiplier: 1.55,
+                startSnapMultiplier: 1.15,
+                warningCooldown: 2.2,
+                preservesMistakeStroke: true,
+                hapticStyle: .none,
+                directionSlackDegrees: 35,
+                mergedStrokeAllowance: 2,
+                evaluationTighteningRate: 0.35,
+                showsGuides: true,
+                completionCoverageThreshold: 0.65,
+                startForgivenessMultiplier: 2.4
+            )
+        case .intermediate:
+            return PracticeDifficultyProfile(
+                strokeSize: .standard,
+                corridorWidthMultiplier: 1.05,
+                corridorSoftness: 12,
+                startToleranceMultiplier: 1.05,
+                deviationToleranceMultiplier: 1.0,
+                startSnapMultiplier: 0.85,
+                warningCooldown: 1.6,
+                preservesMistakeStroke: true,
+                hapticStyle: .soft,
+                directionSlackDegrees: 24,
+                mergedStrokeAllowance: 1,
+                evaluationTighteningRate: 0.55,
+                showsGuides: true,
+                completionCoverageThreshold: 0.75,
+                startForgivenessMultiplier: 1.7
+            )
+        case .expert:
+            return PracticeDifficultyProfile(
+                strokeSize: .compact,
+                corridorWidthMultiplier: 0.7,
+                corridorSoftness: 8,
+                startToleranceMultiplier: 0.7,
+                deviationToleranceMultiplier: 0.68,
+                startSnapMultiplier: 0.6,
+                warningCooldown: 1.0,
+                preservesMistakeStroke: false,
+                hapticStyle: .warning,
+                directionSlackDegrees: 15,
+                mergedStrokeAllowance: 0,
+                evaluationTighteningRate: 0.75,
+                showsGuides: false,
+                completionCoverageThreshold: 0.85,
+                startForgivenessMultiplier: 1.3
+            )
         }
     }
 }
@@ -142,10 +227,127 @@ struct ScoreResult: Codable, Equatable {
 }
 
 struct PracticeGoal: Codable, Equatable {
-    var dailyXP: Int
-    var activeDaysPerWeek: Int
+    static let secondsPerLetter = 5
+    static let defaultActiveWeekdays: Set<Int> = [0, 1, 2, 3, 4] // Monday–Friday
 
-    static let defaultGoal = PracticeGoal(dailyXP: 100, activeDaysPerWeek: 5)
+    var dailySeconds: Int {
+        didSet {
+            dailySeconds = max(dailySeconds, PracticeGoal.secondsPerLetter)
+        }
+    }
+
+    private var storedActiveDaysPerWeek: Int
+    private var storedActiveWeekdayIndices: Set<Int>
+
+    var activeDaysPerWeek: Int {
+        get {
+            let count = activeWeekdayIndices.count
+            return count > 0 ? count : storedActiveDaysPerWeek
+        }
+        set {
+            storedActiveDaysPerWeek = PracticeGoal.clampDays(newValue)
+            if storedActiveWeekdayIndices.count != storedActiveDaysPerWeek {
+                storedActiveWeekdayIndices = PracticeGoal.defaultWeekdaySet(forCount: storedActiveDaysPerWeek)
+            }
+        }
+    }
+
+    var activeWeekdayIndices: Set<Int> {
+        get {
+            if storedActiveWeekdayIndices.isEmpty {
+                return PracticeGoal.defaultWeekdaySet(forCount: storedActiveDaysPerWeek)
+            }
+            return storedActiveWeekdayIndices
+        }
+        set {
+            let sanitized = PracticeGoal.sanitizeWeekdaySet(newValue)
+            if sanitized.isEmpty {
+                storedActiveWeekdayIndices = PracticeGoal.defaultWeekdaySet(forCount: storedActiveDaysPerWeek)
+            } else {
+                storedActiveWeekdayIndices = sanitized
+                storedActiveDaysPerWeek = sanitized.count
+            }
+        }
+    }
+
+    var dailyLetterGoal: Int {
+        max(dailySeconds / PracticeGoal.secondsPerLetter, 1)
+    }
+
+    static let defaultGoal = PracticeGoal(dailySeconds: 300,
+                                          activeDaysPerWeek: 5,
+                                          activeWeekdayIndices: PracticeGoal.defaultActiveWeekdays)
+
+    private enum CodingKeys: String, CodingKey {
+        case dailySeconds
+        case activeDaysPerWeek
+        case activeWeekdayIndices
+        case dailyXP // legacy
+    }
+
+    init(dailySeconds: Int,
+         activeDaysPerWeek: Int,
+         activeWeekdayIndices: Set<Int>? = nil) {
+        self.dailySeconds = max(dailySeconds, PracticeGoal.secondsPerLetter)
+        let clampedDays = PracticeGoal.clampDays(activeDaysPerWeek)
+        self.storedActiveDaysPerWeek = clampedDays
+        if let indices = activeWeekdayIndices {
+            let sanitized = PracticeGoal.sanitizeWeekdaySet(indices)
+            if sanitized.isEmpty {
+                self.storedActiveWeekdayIndices = PracticeGoal.defaultWeekdaySet(forCount: clampedDays)
+            } else {
+                self.storedActiveWeekdayIndices = sanitized
+                self.storedActiveDaysPerWeek = sanitized.count
+            }
+        } else {
+            self.storedActiveWeekdayIndices = PracticeGoal.defaultWeekdaySet(forCount: clampedDays)
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let decodedSeconds = try container.decodeIfPresent(Int.self, forKey: .dailySeconds)
+            ?? container.decodeIfPresent(Int.self, forKey: .dailyXP)
+            ?? 300
+        self.dailySeconds = max(decodedSeconds, PracticeGoal.secondsPerLetter)
+
+        let decodedDays = PracticeGoal.clampDays(
+            try container.decodeIfPresent(Int.self, forKey: .activeDaysPerWeek) ?? 5
+        )
+        self.storedActiveDaysPerWeek = decodedDays
+
+        if let indices = try container.decodeIfPresent([Int].self, forKey: .activeWeekdayIndices) {
+            let sanitized = PracticeGoal.sanitizeWeekdaySet(Set(indices))
+            if sanitized.isEmpty {
+                self.storedActiveWeekdayIndices = PracticeGoal.defaultWeekdaySet(forCount: decodedDays)
+            } else {
+                self.storedActiveWeekdayIndices = sanitized
+                self.storedActiveDaysPerWeek = sanitized.count
+            }
+        } else {
+            self.storedActiveWeekdayIndices = PracticeGoal.defaultWeekdaySet(forCount: decodedDays)
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(dailySeconds, forKey: .dailySeconds)
+        try container.encode(activeDaysPerWeek, forKey: .activeDaysPerWeek)
+        try container.encode(Array(activeWeekdayIndices).sorted(), forKey: .activeWeekdayIndices)
+    }
+
+    private static func clampDays(_ value: Int) -> Int {
+        min(max(value, 1), 7)
+    }
+
+    private static func defaultWeekdaySet(forCount count: Int) -> Set<Int> {
+        let clamped = clampDays(count)
+        return Set((0..<clamped).map { $0 })
+    }
+
+    private static func sanitizeWeekdaySet(_ set: Set<Int>) -> Set<Int> {
+        Set(set.filter { (0...6).contains($0) })
+    }
 }
 
 struct UserProfile: Codable, Equatable {
@@ -190,13 +392,53 @@ struct XPEvent: Codable, Identifiable, Equatable {
 
 struct ContributionDay: Identifiable, Equatable {
     let date: Date
-    let xpEarned: Int
-    let goalXP: Int
+    let secondsSpent: Int
+    let goalSeconds: Int
 
     var id: Date { date }
 
     var didHitGoal: Bool {
-        xpEarned >= goalXP && goalXP > 0
+        goalSeconds > 0 && secondsSpent >= goalSeconds
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case date
+        case secondsSpent
+        case goalSeconds
+        case xpEarned // legacy
+        case goalXP // legacy
+    }
+
+    init(date: Date, secondsSpent: Int, goalSeconds: Int) {
+        self.date = date
+        self.secondsSpent = secondsSpent
+        self.goalSeconds = goalSeconds
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        date = try container.decode(Date.self, forKey: .date)
+        if let seconds = try container.decodeIfPresent(Int.self, forKey: .secondsSpent) {
+            secondsSpent = seconds
+        } else if let xp = try container.decodeIfPresent(Int.self, forKey: .xpEarned) {
+            secondsSpent = xp
+        } else {
+            secondsSpent = 0
+        }
+        if let goal = try container.decodeIfPresent(Int.self, forKey: .goalSeconds) {
+            goalSeconds = goal
+        } else if let legacyGoal = try container.decodeIfPresent(Int.self, forKey: .goalXP) {
+            goalSeconds = legacyGoal
+        } else {
+            goalSeconds = 0
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(date, forKey: .date)
+        try container.encode(secondsSpent, forKey: .secondsSpent)
+        try container.encode(goalSeconds, forKey: .goalSeconds)
     }
 }
 
@@ -255,6 +497,7 @@ struct UserSettings: Codable, Equatable {
     var inputPreference: InputPreference
     var strokeSize: StrokeSizePreference
     var difficulty: PracticeDifficulty
+    var prefersGuides: Bool
 
     enum CodingKeys: String, CodingKey {
         case isLeftHanded
@@ -262,18 +505,21 @@ struct UserSettings: Codable, Equatable {
         case inputPreference
         case strokeSize
         case difficulty
+        case prefersGuides
     }
 
     init(isLeftHanded: Bool,
          hapticsEnabled: Bool,
          inputPreference: InputPreference,
          strokeSize: StrokeSizePreference,
-         difficulty: PracticeDifficulty) {
+         difficulty: PracticeDifficulty,
+         prefersGuides: Bool) {
         self.isLeftHanded = isLeftHanded
         self.hapticsEnabled = hapticsEnabled
         self.inputPreference = inputPreference
         self.strokeSize = strokeSize
         self.difficulty = difficulty
+        self.prefersGuides = prefersGuides
     }
 
     init(from decoder: Decoder) throws {
@@ -282,12 +528,14 @@ struct UserSettings: Codable, Equatable {
         let hapticsEnabled = try container.decodeIfPresent(Bool.self, forKey: .hapticsEnabled) ?? true
         let inputPreference = try container.decodeIfPresent(InputPreference.self, forKey: .inputPreference) ?? .pencilOnly
         let strokeSize = try container.decodeIfPresent(StrokeSizePreference.self, forKey: .strokeSize) ?? .standard
-        let difficulty = try container.decodeIfPresent(PracticeDifficulty.self, forKey: .difficulty) ?? .medium
+        let difficulty = try container.decodeIfPresent(PracticeDifficulty.self, forKey: .difficulty) ?? .intermediate
+        let prefersGuides = try container.decodeIfPresent(Bool.self, forKey: .prefersGuides) ?? true
         self.init(isLeftHanded: isLeftHanded,
                   hapticsEnabled: hapticsEnabled,
                   inputPreference: inputPreference,
                   strokeSize: strokeSize,
-                  difficulty: difficulty)
+                  difficulty: difficulty,
+                  prefersGuides: prefersGuides)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -297,13 +545,15 @@ struct UserSettings: Codable, Equatable {
         try container.encode(inputPreference, forKey: .inputPreference)
         try container.encode(strokeSize, forKey: .strokeSize)
         try container.encode(difficulty, forKey: .difficulty)
+        try container.encode(prefersGuides, forKey: .prefersGuides)
     }
 
     static let `default` = UserSettings(isLeftHanded: false,
                                         hapticsEnabled: true,
                                         inputPreference: .pencilOnly,
                                         strokeSize: .standard,
-                                        difficulty: .medium)
+                                        difficulty: .intermediate,
+                                        prefersGuides: true)
 }
 
 struct StageAttemptSummary: Codable, Equatable {

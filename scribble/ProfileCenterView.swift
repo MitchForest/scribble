@@ -3,232 +3,243 @@ import SwiftUI
 struct ProfileCenterView: View {
     @EnvironmentObject private var dataStore: PracticeDataStore
     @Environment(\.dismiss) private var dismiss
+    @FocusState private var nameFieldFocused: Bool
+
+    @State private var nameDraft: String = ""
+    @State private var customLetters: Int = 60
+    @State private var selectedWeekdays: Set<Int> = Set([0, 1, 2, 3, 4])
+
+    private let weekdayOptions: [WeekdayOption] = [
+        WeekdayOption(index: 0, shortLabel: "Mon", fullLabel: "Monday"),
+        WeekdayOption(index: 1, shortLabel: "Tue", fullLabel: "Tuesday"),
+        WeekdayOption(index: 2, shortLabel: "Wed", fullLabel: "Wednesday"),
+        WeekdayOption(index: 3, shortLabel: "Thu", fullLabel: "Thursday"),
+        WeekdayOption(index: 4, shortLabel: "Fri", fullLabel: "Friday"),
+        WeekdayOption(index: 5, shortLabel: "Sat", fullLabel: "Saturday"),
+        WeekdayOption(index: 6, shortLabel: "Sun", fullLabel: "Sunday")
+    ]
 
     private var today: ContributionDay {
         dataStore.todayContribution()
     }
 
-    private var weeklySummary: (hits: Int, target: Int) {
-        dataStore.weeklyGoalSummary()
+    private var goalLetters: Int {
+        max(dataStore.profile.goal.dailyLetterGoal, 1)
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 28) {
-                    avatarCard
-                    nameCard
-                    difficultyCard
-                    goalCard
-                    preferencesCard
+        VStack(spacing: 18) {
+            Capsule()
+                .fill(Color.black.opacity(0.18))
+                .frame(width: 60, height: 6)
+                .padding(.top, 12)
+
+            HStack {
+                Text("Profile Center")
+                    .font(.system(size: 26, weight: .heavy, design: .rounded))
+                    .foregroundColor(ScribbleColors.primary)
+                Spacer()
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 26, weight: .bold))
+                        .foregroundColor(ScribbleColors.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 24)
+
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 24) {
+                    identitySection
+                    goalsSection
+                    preferencesSection
                 }
                 .padding(.horizontal, 24)
-                .padding(.top, 28)
-                .padding(.bottom, 40)
+                .padding(.bottom, 28)
             }
-            .background(Color(red: 0.97, green: 0.99, blue: 1.0).ignoresSafeArea())
-            .navigationTitle("Profile")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") {
-                        dismiss()
+        }
+        .background(
+            ScribbleColors.cardBackground
+                .ignoresSafeArea()
+        )
+        .presentationDetents([.large])
+        .presentationDragIndicator(.hidden)
+        .onAppear {
+            syncInitialState()
+        }
+        .onChange(of: dataStore.profile.goal.dailySeconds) { _, newValue in
+            let letters = max(newValue / PracticeGoal.secondsPerLetter, 1)
+            customLetters = letters
+        }
+        .onChange(of: dataStore.profile.goal.activeWeekdayIndices) { _, newValue in
+            selectedWeekdays = newValue
+        }
+    }
+
+    private var identitySection: some View {
+        ProfileSection(title: "Your Scribble identity") {
+            VStack(spacing: 18) {
+                DiceBearAvatar(seed: dataStore.profile.avatarSeed, size: 140)
+                    .shadow(color: Color.black.opacity(0.08), radius: 16, x: 0, y: 10)
+
+                Button {
+                    shuffleAvatar()
+                } label: {
+                    Label("Shuffle avatar", systemImage: "shuffle")
+                        .font(.system(size: 18, weight: .semibold, design: .rounded))
+                        .foregroundColor(ScribbleColors.accentDark)
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 14)
+                        .background(
+                            Capsule().fill(ScribbleColors.accent.opacity(0.35))
+                        )
+                }
+                .buttonStyle(.plain)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Display name")
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundColor(ScribbleColors.secondary.opacity(0.8))
+
+                    TextField("Explorer", text: $nameDraft)
+                        .font(.system(size: 22, weight: .heavy, design: .rounded))
+                        .foregroundColor(ScribbleColors.primary)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 18)
+                        .background(
+                            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                                .fill(ScribbleColors.surface)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                                .stroke(ScribbleColors.inputBorder.opacity(0.5), lineWidth: 2)
+                        )
+                        .focused($nameFieldFocused)
+                        .onChange(of: nameDraft) { _, newValue in
+                            commitDisplayName(newValue)
+                        }
+                }
+            }
+        }
+    }
+
+    private var goalsSection: some View {
+        ProfileSection(title: "Practice goals") {
+            VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Daily letters")
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundColor(ScribbleColors.secondary.opacity(0.8))
+
+                    HStack(spacing: 12) {
+                        GoalPresetButton(title: "60 letters",
+                                         isSelected: goalLetters == 60) {
+                            setGoalLetters(60)
+                        }
+                        GoalPresetButton(title: "120 letters",
+                                         isSelected: goalLetters == 120) {
+                            setGoalLetters(120)
+                        }
+                        GoalPresetButton(title: "Custom",
+                                         isSelected: goalLetters != 60 && goalLetters != 120) {
+                            customLetters = goalLetters
+                        }
                     }
-                    .font(.headline)
+
+                    if goalLetters != 60 && goalLetters != 120 {
+                        LetterAdjuster(value: customLetters,
+                                       onIncrement: { setGoalLetters(customLetters + 5) },
+                                       onDecrement: { setGoalLetters(max(customLetters - 5, 5)) })
+                    }
+                }
+
+                Divider()
+                    .padding(.vertical, 6)
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Practice days")
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundColor(ScribbleColors.secondary.opacity(0.8))
+
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 4), spacing: 10) {
+                        ForEach(weekdayOptions) { option in
+                            DayToggleButton(option: option,
+                                            isSelected: selectedWeekdays.contains(option.index)) {
+                                toggleWeekday(option.index)
+                            }
+                        }
+                    }
                 }
             }
         }
     }
 
-    private var avatarCard: some View {
-        VStack(spacing: 16) {
-            DiceBearAvatar(seed: dataStore.profile.avatarSeed, size: 140)
-                .shadow(color: Color.black.opacity(0.08), radius: 16, x: 0, y: 10)
-            Button {
-                shuffleAvatar()
-            } label: {
-                Label("Shuffle Avatar", systemImage: "shuffle")
-                    .font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 10)
-                    .background(
-                        Capsule()
-                            .fill(Color(red: 1.0, green: 0.86, blue: 0.4))
-                    )
-                    .foregroundStyle(Color(red: 0.29, green: 0.2, blue: 0.1))
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(24)
-        .frame(maxWidth: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: 36, style: .continuous)
-                .fill(Color.white)
-                .shadow(color: Color.black.opacity(0.08), radius: 24, x: 0, y: 14)
-        )
-    }
-
-    private var nameCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Display Name")
-                .font(.headline)
-                .foregroundStyle(Color(red: 0.32, green: 0.42, blue: 0.61))
-            TextField("Explorer", text: nameBinding)
-                .font(.title3.weight(.semibold))
-                .padding()
-                .background(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(Color.white)
-                        .shadow(color: Color.black.opacity(0.05), radius: 12, x: 0, y: 6)
-                )
-        }
-        .padding(24)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 32, style: .continuous)
-                .fill(Color.white.opacity(0.95))
-                .shadow(color: Color.black.opacity(0.07), radius: 20, x: 0, y: 12)
-        )
-    }
-
-    private var difficultyCard: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text("Practice Difficulty")
-                .font(.headline)
-                .foregroundStyle(Color(red: 0.32, green: 0.42, blue: 0.61))
-
-            VStack(spacing: 12) {
-                ForEach(PracticeDifficulty.allCases, id: \.self) { level in
-                    DifficultyOptionTile(level: level,
-                                         isSelected: dataStore.settings.difficulty == level,
-                                         onSelect: {
-                                             dataStore.updateDifficulty(level)
-                                         })
+    private var preferencesSection: some View {
+        ProfileSection(title: "Preferences") {
+            VStack(spacing: 16) {
+                Toggle(isOn: Binding(
+                    get: { dataStore.settings.hapticsEnabled },
+                    set: { dataStore.updateHapticsEnabled($0) }
+                )) {
+                    Text("Haptic feedback")
+                        .font(.system(size: 18, weight: .heavy, design: .rounded))
+                        .foregroundColor(ScribbleColors.primary)
                 }
-            }
-        }
-        .padding(24)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 32, style: .continuous)
-                .fill(Color.white)
-                .shadow(color: Color.black.opacity(0.08), radius: 20, x: 0, y: 12)
-        )
-    }
+                .toggleStyle(ScribbleToggleStyle())
 
-    private var goalCard: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            Text("XP Goal")
-                .font(.headline)
-                .foregroundStyle(Color(red: 0.32, green: 0.42, blue: 0.61))
-
-            HStack(spacing: 24) {
-                MiniGoalRing(name: dataStore.profile.displayName,
-                             progress: dataStore.dailyProgressRatio(),
-                             contribution: today)
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(progressMessage)
-                        .font(.callout.weight(.semibold))
-                        .foregroundStyle(Color(red: 0.29, green: 0.39, blue: 0.6))
-                    Text("This week: \(weeklySummary.hits) of \(weeklySummary.target) goal days")
-                        .font(.caption)
-                        .foregroundStyle(Color(red: 0.53, green: 0.61, blue: 0.75))
+                Toggle(isOn: Binding(
+                    get: { dataStore.settings.isLeftHanded },
+                    set: { dataStore.updateLeftHanded($0) }
+                )) {
+                    Text("Left-handed guides")
+                        .font(.system(size: 18, weight: .heavy, design: .rounded))
+                        .foregroundColor(ScribbleColors.primary)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .toggleStyle(ScribbleToggleStyle())
             }
-
-            VStack(spacing: 12) {
-                Stepper(value: dailyGoalBinding, in: 20...400, step: 10) {
-                    Text("Daily XP target: \(dataStore.profile.goal.dailyXP) XP")
-                        .font(.subheadline.weight(.semibold))
-                }
-                Stepper(value: activeDaysBinding, in: 1...7, step: 1) {
-                    Text("Goal days each week: \(dataStore.profile.goal.activeDaysPerWeek)")
-                        .font(.subheadline.weight(.semibold))
-                }
-            }
-            .foregroundStyle(Color(red: 0.32, green: 0.42, blue: 0.61))
         }
-        .padding(24)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 32, style: .continuous)
-                .fill(Color.white)
-                .shadow(color: Color.black.opacity(0.08), radius: 20, x: 0, y: 12)
-        )
     }
 
-    private var preferencesCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Preferences")
-                .font(.headline)
-                .foregroundStyle(Color(red: 0.32, green: 0.42, blue: 0.61))
-
-            Toggle(isOn: Binding(
-                get: { dataStore.settings.hapticsEnabled },
-                set: { dataStore.updateHapticsEnabled($0) }
-            )) {
-                Label("Haptic feedback", systemImage: "hand.tap.fill")
-            }
-            .tint(Color(red: 1.0, green: 0.75, blue: 0.3))
-
-            Toggle(isOn: Binding(
-                get: { dataStore.settings.isLeftHanded },
-                set: { dataStore.updateLeftHanded($0) }
-            )) {
-                Label("Left-handed guides", systemImage: "hand.draw.fill")
-            }
-            .tint(Color(red: 0.39, green: 0.58, blue: 0.98))
+    private func syncInitialState() {
+        nameDraft = dataStore.profile.displayName
+        customLetters = goalLetters
+        selectedWeekdays = dataStore.profile.goal.activeWeekdayIndices
+        if selectedWeekdays.isEmpty {
+            selectedWeekdays = defaultWeekdays(for: dataStore.profile.goal.activeDaysPerWeek)
         }
-        .padding(24)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 32, style: .continuous)
-                .fill(Color.white)
-                .shadow(color: Color.black.opacity(0.08), radius: 18, x: 0, y: 10)
-        )
     }
 
-    private var progressMessage: String {
-        let remaining = max(dataStore.profile.goal.dailyXP - today.xpEarned, 0)
-        if dataStore.profile.goal.dailyXP == 0 {
-            return "Daily goals are paused."
+    private func commitDisplayName(_ value: String) {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            nameDraft = ""
+            return
         }
-        if remaining == 0 {
-            return "Today's goal met! 🎉"
+        dataStore.updateDisplayName(trimmed)
+    }
+
+    private func setGoalLetters(_ letters: Int) {
+        let sanitized = max(5, letters)
+        customLetters = sanitized
+        dataStore.updateGoalSeconds(sanitized * PracticeGoal.secondsPerLetter)
+    }
+
+    private func toggleWeekday(_ index: Int) {
+        var updated = selectedWeekdays
+        if updated.contains(index) {
+            if updated.count > 1 {
+                updated.remove(index)
+            }
+        } else {
+            updated.insert(index)
         }
-        return "\(remaining) XP to go today"
-    }
-
-    private var nameBinding: Binding<String> {
-        Binding(
-            get: { dataStore.profile.displayName },
-            set: { newValue in
-                let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                dataStore.updateDisplayName(trimmed.isEmpty ? "Explorer" : trimmed)
-            }
-        )
-    }
-
-    private var dailyGoalBinding: Binding<Int> {
-        Binding(
-            get: { dataStore.profile.goal.dailyXP },
-            set: { newValue in
-                var goal = dataStore.profile.goal
-                goal.dailyXP = max(20, min(newValue, 400))
-                dataStore.updateGoal(goal)
-            }
-        )
-    }
-
-    private var activeDaysBinding: Binding<Int> {
-        Binding(
-            get: { dataStore.profile.goal.activeDaysPerWeek },
-            set: { newValue in
-                var goal = dataStore.profile.goal
-                goal.activeDaysPerWeek = max(1, min(newValue, 7))
-                dataStore.updateGoal(goal)
-            }
-        )
+        guard !updated.isEmpty else { return }
+        selectedWeekdays = updated
+        var goal = dataStore.profile.goal
+        goal.activeWeekdayIndices = updated
+        dataStore.updateGoal(goal)
     }
 
     private func shuffleAvatar() {
@@ -242,119 +253,163 @@ struct ProfileCenterView: View {
             dataStore.updateAvatarSeed(next)
         }
     }
+
+    private func defaultWeekdays(for count: Int) -> Set<Int> {
+        let clamped = max(1, min(count, 7))
+        return Set((0..<clamped))
+    }
 }
 
-private struct DiceBearAvatar: View {
-    let seed: String
-    let size: CGFloat
+// MARK: - Helper Views
 
-    private var url: URL? {
-        var components = URLComponents(string: "https://api.dicebear.com/7.x/adventurer/png")
-        components?.queryItems = [
-            URLQueryItem(name: "seed", value: seed),
-            URLQueryItem(name: "backgroundColor", value: "ffefd5"),
-            URLQueryItem(name: "radius", value: "50"),
-            URLQueryItem(name: "size", value: "\(Int(size * 2))")
-        ]
-        return components?.url
+private struct ProfileSection<Content: View>: View {
+    let title: String
+    let content: () -> Content
+
+    init(title: String, @ViewBuilder content: @escaping () -> Content) {
+        self.title = title
+        self.content = content
     }
 
     var body: some View {
-        AsyncImage(url: url, transaction: Transaction(animation: .easeInOut)) { phase in
-            switch phase {
-            case .empty:
-                ProgressView()
-                    .frame(width: size, height: size)
-            case .success(let image):
-                image
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: size, height: size)
-                    .clipShape(Circle())
-            case .failure:
-                Circle()
-                    .fill(Color(red: 0.98, green: 0.9, blue: 0.68))
-                    .frame(width: size, height: size)
-                    .overlay(
-                        Text("😊")
-                            .font(.system(size: size * 0.4))
-                    )
-            @unknown default:
-                Circle()
-                    .fill(Color(red: 0.98, green: 0.9, blue: 0.68))
-                    .frame(width: size, height: size)
-            }
+        VStack(alignment: .leading, spacing: 16) {
+            Text(title)
+                .font(.system(size: 18, weight: .heavy, design: .rounded))
+                .foregroundColor(ScribbleColors.primary)
+            content()
         }
+        .padding(24)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 32, style: .continuous)
+                .fill(ScribbleColors.surface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 32, style: .continuous)
+                .stroke(Color.white.opacity(0.2), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.08), radius: 16, x: 0, y: 10)
     }
 }
 
-private struct DifficultyOptionTile: View {
-    let level: PracticeDifficulty
+private struct WeekdayOption: Identifiable {
+    let index: Int
+    let shortLabel: String
+    let fullLabel: String
+    var id: Int { index }
+}
+
+private struct DayToggleButton: View {
+    let option: WeekdayOption
     let isSelected: Bool
-    let onSelect: () -> Void
-
-    private var title: String {
-        level.title
-    }
-
-    private var subtitle: String {
-        switch level {
-        case .easy: return "Biggest stroke width and gentle guides."
-        case .medium: return "Balanced stroke width with standard guides."
-        case .hard: return "Slim stroke width and tighter accuracy."
-        }
-    }
+    let action: () -> Void
 
     var body: some View {
-        Button(action: onSelect) {
-            HStack(alignment: .center, spacing: 14) {
-                Image(systemName: iconName)
-                    .font(.title3)
-                    .foregroundStyle(isSelected ? Color.white : Color(red: 0.36, green: 0.47, blue: 0.68))
-                    .padding(12)
-                    .background(
-                        Circle()
-                            .fill(isSelected ? Color(red: 1.0, green: 0.75, blue: 0.3) : Color(red: 0.9, green: 0.95, blue: 1.0))
-                    )
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
-                        .font(.subheadline.weight(.semibold))
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(Color(red: 0.47, green: 0.55, blue: 0.69))
-                }
-                Spacer()
-                if isSelected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(Color(red: 1.0, green: 0.75, blue: 0.3))
-                        .font(.title3)
-                }
+        Button(action: action) {
+            VStack(spacing: 6) {
+                Text(option.shortLabel)
+                    .font(.system(size: 18, weight: .heavy, design: .rounded))
+                    .foregroundColor(isSelected ? ScribbleColors.accentDark : ScribbleColors.primary)
+                Text(option.fullLabel)
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundColor(isSelected ? ScribbleColors.accentDark.opacity(0.85) : ScribbleColors.secondary.opacity(0.7))
+                    .lineLimit(1)
             }
-            .padding(16)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity)
             .background(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(isSelected ? Color(red: 1.0, green: 0.95, blue: 0.83) : Color.white)
-                    .shadow(color: Color.black.opacity(isSelected ? 0.12 : 0.06), radius: isSelected ? 16 : 10, x: 0, y: isSelected ? 10 : 6)
+                    .fill(isSelected ? ScribbleColors.accent.opacity(0.4) : Color.white)
             )
-            .foregroundStyle(Color(red: 0.28, green: 0.38, blue: 0.57))
+            .overlay(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(isSelected ? ScribbleColors.accent : Color.white.opacity(0.25), lineWidth: 2)
+            )
+            .shadow(color: Color.black.opacity(isSelected ? 0.12 : 0.05),
+                    radius: isSelected ? 14 : 8,
+                    x: 0,
+                    y: isSelected ? 10 : 6)
         }
         .buttonStyle(.plain)
     }
+}
 
-    private var iconName: String {
-        switch level {
-        case .easy: return "tortoise.fill"
-        case .medium: return "scribble.variable"
-        case .hard: return "bolt.fill"
+private struct LetterAdjuster: View {
+    let value: Int
+    let onIncrement: () -> Void
+    let onDecrement: () -> Void
+
+    var body: some View {
+        HStack(spacing: 22) {
+            AdjustButton(systemName: "minus", action: onDecrement, isEnabled: value > 5)
+            Text("\(value) letters")
+                .font(.system(size: 24, weight: .heavy, design: .rounded))
+                .foregroundColor(ScribbleColors.primary)
+                .frame(minWidth: 140)
+            AdjustButton(systemName: "plus", action: onIncrement, isEnabled: true)
         }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+private struct AdjustButton: View {
+    let systemName: String
+    let action: () -> Void
+    let isEnabled: Bool
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 24, weight: .bold))
+                .foregroundColor(isEnabled ? ScribbleColors.accentDark : ScribbleColors.secondary.opacity(0.45))
+                .frame(width: 60, height: 60)
+                .background(
+                    Circle()
+                        .fill(isEnabled ? ScribbleColors.accent.opacity(0.4) : ScribbleColors.controlDisabled)
+                )
+                .overlay(
+                    Circle()
+                        .stroke(isEnabled ? ScribbleColors.accent : Color.clear, lineWidth: 2)
+                )
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+    }
+}
+
+private struct GoalPresetButton: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .padding(.vertical, 10)
+                .padding(.horizontal, 18)
+                .background(
+                    Capsule()
+                        .fill(isSelected ? ScribbleColors.accent.opacity(0.4) : Color.white)
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(isSelected ? ScribbleColors.accent : Color.white.opacity(0.3), lineWidth: 2)
+                )
+                .foregroundColor(isSelected ? ScribbleColors.accentDark : ScribbleColors.secondary)
+        }
+        .buttonStyle(.plain)
+        .shadow(color: Color.black.opacity(isSelected ? 0.12 : 0.05),
+                radius: isSelected ? 10 : 6,
+                x: 0,
+                y: isSelected ? 6 : 3)
     }
 }
 
 private struct MiniGoalRing: View {
-    let name: String
+    let lettersCompleted: Int
+    let lettersGoal: Int
     let progress: Double
-    let contribution: ContributionDay
 
     var body: some View {
         ZStack {
@@ -373,15 +428,20 @@ private struct MiniGoalRing: View {
                     style: StrokeStyle(lineWidth: 10, lineCap: .round)
                 )
                 .rotationEffect(.degrees(-90))
-            Text(name)
-                .font(.system(size: 18, weight: .bold, design: .rounded))
-                .foregroundStyle(Color(red: 0.34, green: 0.42, blue: 0.6))
-                .lineLimit(2)
-                .multilineTextAlignment(.center)
-                .padding(8)
+            VStack(spacing: 4) {
+                Text("\(lettersCompleted)")
+                    .font(.system(size: 26, weight: .heavy, design: .rounded))
+                    .foregroundColor(ScribbleColors.primary)
+                Text("of \(lettersGoal)")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .foregroundColor(ScribbleColors.secondary)
+                Text("letters")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundColor(ScribbleColors.secondary.opacity(0.8))
+            }
         }
         .frame(width: 120, height: 120)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Today's progress \(contribution.xpEarned) out of \(contribution.goalXP) XP")
+        .accessibilityLabel("Today's progress \(lettersCompleted) of \(lettersGoal) letters")
     }
 }

@@ -59,8 +59,11 @@ struct PencilCanvasView: UIViewRepresentable {
         }
 
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
-            parent.drawing = canvasView.drawing
-            parent.onDrawingChanged(canvasView.drawing)
+            let updatedDrawing = canvasView.drawing
+            DispatchQueue.main.async { [parent, updatedDrawing] in
+                parent.drawing = updatedDrawing
+                parent.onDrawingChanged(updatedDrawing)
+            }
         }
     }
 }

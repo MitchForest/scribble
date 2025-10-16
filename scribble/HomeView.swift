@@ -19,6 +19,45 @@ struct HomeView: View {
         dataStore.dailyProgressRatio()
     }
 
+    private var lettersGoalPerDay: Int {
+        max(dataStore.profile.goal.dailyLetterGoal, 1)
+    }
+
+    private var lettersCompletedToday: Int {
+        max(today.secondsSpent / PracticeGoal.secondsPerLetter, 0)
+    }
+
+    private var streak: Int {
+        dataStore.currentStreak()
+    }
+
+    private var streakChip: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Image(systemName: "flame.fill")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundColor(Color(red: 0.98, green: 0.58, blue: 0.25))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Streak")
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundColor(ScribbleColors.secondary.opacity(0.8))
+                Text("\(streak) \(streak == 1 ? "day" : "days")")
+                    .font(.system(size: 16, weight: .heavy, design: .rounded))
+                    .foregroundColor(ScribbleColors.primary)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .fill(Color.white.opacity(0.9))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .stroke(Color.white.opacity(0.35), lineWidth: 1.5)
+        )
+        .shadow(color: Color.black.opacity(0.08), radius: 12, x: 0, y: 6)
+    }
+
     var body: some View {
         NavigationStack(path: $path) {
             ZStack {
@@ -65,14 +104,17 @@ struct HomeView: View {
                     .foregroundStyle(Color(red: 0.46, green: 0.55, blue: 0.72))
             }
             Spacer()
-            ProfileMenuButton(seed: dataStore.profile.avatarSeed,
-                              progress: progress,
-                              today: today,
-                              goal: dataStore.profile.goal,
-                              difficulty: dataStore.settings.difficulty,
-                              onDifficultyChange: { dataStore.updateDifficulty($0) },
-                              guidesBinding: nil,
-                              onOpenProfile: { showProfile = true })
+            HStack(spacing: 16) {
+                streakChip
+                ProfileMenuButton(seed: dataStore.profile.avatarSeed,
+                                  progress: progress,
+                                  today: today,
+                                  goal: dataStore.profile.goal,
+                                  difficulty: dataStore.settings.difficulty,
+                                  streak: streak,
+                                  onDifficultyChange: { dataStore.updateDifficulty($0) },
+                                  onOpenProfile: { showProfile = true })
+            }
         }
         .accessibilityElement(children: .combine)
     }
@@ -84,7 +126,7 @@ struct HomeView: View {
             VStack(spacing: 10) {
                 Image(systemName: "pencil.and.outline")
                     .font(.system(size: 46, weight: .bold))
-                Text("Start Practice")
+                Text("Practice")
                     .font(.system(size: 26, weight: .heavy, design: .rounded))
             }
             .foregroundStyle(Color(red: 0.26, green: 0.18, blue: 0.07))
@@ -105,7 +147,7 @@ struct HomeView: View {
             .shadow(color: Color.black.opacity(0.15), radius: 16, x: 0, y: 10)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Start Free Practice")
+        .accessibilityLabel("Start Practice")
     }
 
     private func startPractice() {
@@ -113,12 +155,19 @@ struct HomeView: View {
     }
 
     private var progressSubtitle: String {
-        guard today.goalXP > 0 else {
+        guard lettersGoalPerDay > 0 else {
             return "Set a goal to fill your magic ring."
         }
-        let remaining = max(today.goalXP - today.xpEarned, 0)
-        return remaining == 0 ? "Today's goal is complete! 🎉" : "\(remaining) XP to fill today’s ring."
+        let remainingLetters = max(lettersGoalPerDay - lettersCompletedToday, 0)
+        guard remainingLetters > 0 else {
+            return "Today's goal is complete! 🎉"
+        }
+
+        let lettersRemaining = remainingLetters
+        let letterLabel = lettersRemaining == 1 ? "letter" : "letters"
+        return "\(lettersRemaining) \(letterLabel) left to close today's ring."
     }
+
 }
 
 private enum HomeRoute: Hashable {
@@ -145,43 +194,46 @@ struct ProfileMenuButton: View {
     let today: ContributionDay
     let goal: PracticeGoal
     let difficulty: PracticeDifficulty
+    let streak: Int
     let onDifficultyChange: (PracticeDifficulty) -> Void
-    let guidesBinding: Binding<Bool>?
     let onOpenProfile: (() -> Void)?
 
-    private var difficultyBinding: Binding<PracticeDifficulty> {
-        Binding(
-            get: { difficulty },
-            set: { onDifficultyChange($0) }
-        )
-    }
+    @State private var showQuickActions = false
 
     var body: some View {
-        Menu {
-            Section {
-                Text("XP today: \(today.xpEarned)/\(max(goal.dailyXP, 1))")
-                Text("Weekly goal: \(goal.activeDaysPerWeek) days")
-            }
-            Section {
-                Picker("Difficulty", selection: difficultyBinding) {
-                    ForEach(PracticeDifficulty.allCases) { level in
-                        Text(level.title).tag(level)
-                    }
-                }
-            }
-            if let guidesBinding {
-                Section {
-                    Toggle("Guides On", isOn: guidesBinding)
-                }
-            }
-            if let onOpenProfile {
-                Section {
-                    Button("Open Profile", action: onOpenProfile)
-                }
-            }
+        Button {
+            showQuickActions = true
         } label: {
             AvatarProgressButton(seed: seed, progress: progress)
                 .accessibilityLabel("Open profile options")
+        }
+        .buttonStyle(.plain)
+        .sheet(isPresented: $showQuickActions) {
+            ProfileQuickActionsSheet(
+                seed: seed,
+                progress: progress,
+                today: today,
+                goal: goal,
+                difficulty: difficulty,
+                streak: streak,
+                onDifficultyChange: { newValue in
+                    onDifficultyChange(newValue)
+                },
+                onOpenProfile: onOpenProfile
+            )
+        }
+    }
+
+    private func formatDuration(_ seconds: Int) -> String {
+        let minutes = seconds / 60
+        let remainder = seconds % 60
+        switch (minutes, remainder) {
+        case (0, _):
+            return "\(seconds) sec"
+        case (_, 0):
+            return "\(minutes) min"
+        default:
+            return "\(minutes) min \(remainder) sec"
         }
     }
 }
@@ -214,6 +266,201 @@ struct AvatarProgressButton: View {
     }
 }
 
+private struct ProfileQuickActionsSheet: View {
+    let seed: String
+    let progress: Double
+    let today: ContributionDay
+    let goal: PracticeGoal
+    let difficulty: PracticeDifficulty
+    let streak: Int
+    let onDifficultyChange: (PracticeDifficulty) -> Void
+    let onOpenProfile: (() -> Void)?
+
+    @State private var selectedDifficulty: PracticeDifficulty
+    @Environment(\.dismiss) private var dismiss
+
+    init(seed: String,
+         progress: Double,
+         today: ContributionDay,
+         goal: PracticeGoal,
+         difficulty: PracticeDifficulty,
+         streak: Int,
+         onDifficultyChange: @escaping (PracticeDifficulty) -> Void,
+         onOpenProfile: (() -> Void)?) {
+        self.seed = seed
+        self.progress = progress
+        self.today = today
+        self.goal = goal
+        self.difficulty = difficulty
+        self.streak = streak
+        self.onDifficultyChange = onDifficultyChange
+        self.onOpenProfile = onOpenProfile
+        _selectedDifficulty = State(initialValue: difficulty)
+    }
+
+    var body: some View {
+        VStack(spacing: 26) {
+            Capsule()
+                .fill(Color.black.opacity(0.12))
+                .frame(width: 60, height: 6)
+                .padding(.top, 16)
+
+            VStack(spacing: 18) {
+                AvatarProgressButton(seed: seed, progress: progress)
+                    .frame(width: 120, height: 120)
+
+                Text("Keep scribbling!")
+                    .font(.system(size: 28, weight: .heavy, design: .rounded))
+                    .foregroundColor(ScribbleColors.primary)
+            }
+
+            statsCard
+
+            VStack(alignment: .leading, spacing: 18) {
+                Text("Adjust your level")
+                    .font(.system(size: 22, weight: .heavy, design: .rounded))
+                    .foregroundColor(ScribbleColors.primary)
+
+                VStack(spacing: 16) {
+                    ForEach(PracticeDifficulty.allCases) { level in
+                        ScribbleSelectableOption(
+                            title: level.title,
+                            subtitle: difficultyDescription(for: level),
+                            systemName: difficultyIcon(for: level),
+                            tint: difficultyTint(for: level),
+                            isSelected: selectedDifficulty == level
+                        ) {
+                            selectedDifficulty = level
+                            dismiss()
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 24)
+
+            if let onOpenProfile {
+                Button {
+                    dismiss()
+                    onOpenProfile()
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "person.crop.circle")
+                            .font(.system(size: 24, weight: .bold))
+                        Text("Open Profile Center")
+                            .font(.system(size: 20, weight: .heavy, design: .rounded))
+                    }
+                    .foregroundColor(ScribbleColors.accentDark)
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 16)
+                    .frame(maxWidth: .infinity)
+                    .background(
+                        RoundedRectangle(cornerRadius: ScribbleSpacing.cornerRadiusMedium, style: .continuous)
+                            .fill(ScribbleColors.accent.opacity(0.4))
+                    )
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 24)
+            }
+
+            Button {
+                dismiss()
+            } label: {
+                Text("Close")
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .foregroundColor(ScribbleColors.secondary)
+                    .padding(.bottom, 12)
+            }
+            .buttonStyle(.plain)
+        }
+        .onChange(of: selectedDifficulty) { _, newValue in
+            guard newValue != difficulty else { return }
+            onDifficultyChange(newValue)
+        }
+        .padding(.bottom, 24)
+        .background(
+            ScribbleColors.cardBackground
+                .ignoresSafeArea()
+        )
+    }
+
+    private var statsCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Today's letters")
+                .font(.system(size: 20, weight: .heavy, design: .rounded))
+                .foregroundColor(ScribbleColors.primary)
+
+            HStack {
+                statTile(title: "Today", value: "\(lettersToday) letters")
+                statTile(title: "Goal", value: "\(goalLetters) letters")
+                statTile(title: "Streak", value: streakLabel)
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 20)
+        .background(
+            RoundedRectangle(cornerRadius: 36, style: .continuous)
+                .fill(ScribbleColors.surface)
+        )
+        .shadow(color: Color.black.opacity(0.1), radius: 18, x: 0, y: 12)
+    }
+
+    private func statTile(title: String, value: String) -> some View {
+        VStack(spacing: 6) {
+            Text(title.uppercased())
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .foregroundColor(ScribbleColors.secondary.opacity(0.7))
+            Text(value)
+                .font(.system(size: 18, weight: .heavy, design: .rounded))
+                .foregroundColor(ScribbleColors.primary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .fill(ScribbleColors.inputBackground.opacity(0.6))
+        )
+    }
+
+    private func difficultyIcon(for difficulty: PracticeDifficulty) -> String {
+        switch difficulty {
+        case .beginner: return "sparkles"
+        case .intermediate: return "pencil.and.outline"
+        case .expert: return "flame.fill"
+        }
+    }
+
+    private func difficultyTint(for difficulty: PracticeDifficulty) -> Color {
+        switch difficulty {
+        case .beginner: return Color(red: 0.86, green: 0.94, blue: 1.0)
+        case .intermediate: return Color(red: 0.8, green: 0.94, blue: 0.84)
+        case .expert: return Color(red: 1.0, green: 0.88, blue: 0.76)
+        }
+    }
+
+    private func difficultyDescription(for difficulty: PracticeDifficulty) -> String {
+        switch difficulty {
+        case .beginner:
+            return "Gentle practice with wide guides."
+        case .intermediate:
+            return "Balanced challenge for growing writers."
+        case .expert:
+            return "Tight guides and faster feedback."
+        }
+    }
+
+    private var lettersToday: Int {
+        max(today.secondsSpent / PracticeGoal.secondsPerLetter, 0)
+    }
+
+    private var goalLetters: Int {
+        max(goal.dailySeconds / PracticeGoal.secondsPerLetter, 1)
+    }
+
+    private var streakLabel: String {
+        let label = streak == 1 ? "day" : "days"
+        return "\(streak) \(label)"
+    }
+}
 struct AvatarImage: View {
     let seed: String
     let size: CGFloat
@@ -262,124 +509,209 @@ private struct GoalTrackerCard: View {
     let contributions: [ContributionDay]
     let goal: PracticeGoal
     private let calendar = Calendar(identifier: .gregorian)
+    private let squareSize: CGFloat = 18
+    private let dayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Goal Tracker")
-                .font(.headline)
-                .foregroundStyle(Color(red: 0.3, green: 0.4, blue: 0.6))
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Streaks")
+                .font(.system(size: 22, weight: .heavy, design: .rounded))
+                .foregroundColor(ScribbleColors.primary)
             if contributions.isEmpty {
                 EmptyTrackerView()
             } else {
-                ContributionGrid(columns: weekColumns)
+                ContributionCalendarGrid(weeks: weekColumns,
+                                         goalDailySeconds: goal.dailySeconds,
+                                         activeWeekdays: goal.activeWeekdayIndices,
+                                         dayLabels: dayLabels,
+                                         squareSize: squareSize)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Text("Goal: \(goal.dailyXP) XP • \(goal.activeDaysPerWeek) days per week")
-                .font(.caption.bold())
-                .foregroundStyle(Color(red: 0.38, green: 0.47, blue: 0.65))
+            Text("Goal: \(goal.dailyLetterGoal) letters • \(goal.activeWeekdayIndices.count) days per week")
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .foregroundColor(ScribbleColors.secondary.opacity(0.8))
         }
-        .padding(22)
-        .frame(maxWidth: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: 32, style: .continuous)
-                .fill(Color.white.opacity(0.95))
-                .shadow(color: Color.black.opacity(0.08), radius: 24, x: 0, y: 14)
-        )
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
     }
 
-    private var weekColumns: [[ContributionDay?]] {
+    private var calendarWithMonday: Calendar {
+        var cal = calendar
+        cal.firstWeekday = 2
+        cal.minimumDaysInFirstWeek = 4
+        return cal
+    }
+
+    private var weekColumns: [WeekColumn] {
         guard !contributions.isEmpty else { return [] }
-        var columns: [[ContributionDay?]] = []
+        var columns: [WeekColumn] = []
         var currentKey: DateComponents?
         var currentColumn = Array<ContributionDay?>(repeating: nil, count: 7)
+        var currentStart: Date?
 
         for day in contributions {
-            let key = calendar.dateComponents([.weekOfYear, .yearForWeekOfYear], from: day.date)
+            let key = calendarWithMonday.dateComponents([.weekOfYear, .yearForWeekOfYear], from: day.date)
             if currentKey == nil {
                 currentKey = key
+                currentStart = startOfWeek(for: day.date)
             } else if key != currentKey {
-                columns.append(currentColumn)
+                if let start = currentStart {
+                    columns.append(WeekColumn(startDate: start, days: currentColumn))
+                }
                 currentColumn = Array(repeating: nil, count: 7)
                 currentKey = key
+                currentStart = startOfWeek(for: day.date)
             }
 
-            let weekday = calendar.component(.weekday, from: day.date)
-            let index = (weekday + 6) % 7 // Monday-first ordering
-            currentColumn[index] = day
+            let index = weekdayIndex(for: day.date)
+            if index >= 0 && index < currentColumn.count {
+                currentColumn[index] = day
+            }
         }
 
-        columns.append(currentColumn)
+        if let start = currentStart {
+            columns.append(WeekColumn(startDate: start, days: currentColumn))
+        }
+
         return columns
+    }
+
+    private func startOfWeek(for date: Date) -> Date {
+        let cal = calendarWithMonday
+        if let interval = cal.dateInterval(of: .weekOfYear, for: date) {
+            return interval.start
+        }
+        return date
+    }
+
+    private func weekdayIndex(for date: Date) -> Int {
+        let weekday = calendar.component(.weekday, from: date)
+        return (weekday + 5) % 7 // shift so Monday = 0
+    }
+
+    private func formatDuration(_ seconds: Int) -> String {
+        let minutes = seconds / 60
+        let remainder = seconds % 60
+        switch (minutes, remainder) {
+        case (0, _):
+            return "\(seconds) sec"
+        case (_, 0):
+            return "\(minutes) min"
+        default:
+            return "\(minutes) min \(remainder) sec"
+        }
     }
 }
 
-private struct ContributionGrid: View {
-    let columns: [[ContributionDay?]]
+private struct WeekColumn: Identifiable {
+    let startDate: Date
+    let days: [ContributionDay?]
+
+    var id: Date { startDate }
+}
+
+private struct ContributionCalendarGrid: View {
+    let weeks: [WeekColumn]
+    let goalDailySeconds: Int
+    let activeWeekdays: Set<Int>
+    let dayLabels: [String]
+    let squareSize: CGFloat
     private let dayFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         return formatter
     }()
-
     var body: some View {
-        HStack(alignment: .top, spacing: 6) {
-            ForEach(Array(columns.enumerated()), id: \.offset) { _, week in
-                VStack(spacing: 6) {
-                    ForEach(0..<7, id: \.self) { index in
-                        let day = week[index]
-                        RoundedRectangle(cornerRadius: 5, style: .continuous)
-                            .fill(color(for: day))
-                            .frame(width: 16, height: 16)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Text("")
+                    .frame(width: 36)
+                ForEach(Array(weeks.enumerated()), id: \.offset) { index, week in
+                    Text(weekLabel(for: index))
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .foregroundColor(ScribbleColors.secondary.opacity(0.65))
+                        .frame(width: squareSize, alignment: .center)
+                }
+            }
+            ForEach(dayLabels.indices, id: \.self) { dayIndex in
+                HStack(spacing: 6) {
+                    Text(dayLabels[dayIndex])
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundColor(ScribbleColors.secondary.opacity(0.7))
+                        .frame(width: 36, alignment: .trailing)
+
+                    ForEach(Array(weeks.enumerated()), id: \.offset) { _, week in
+                        let day: ContributionDay? = dayIndex < week.days.count ? week.days[dayIndex] : nil
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(color(for: day, dayIndex: dayIndex))
+                            .frame(width: squareSize, height: squareSize)
                             .overlay(
-                                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                    .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                    .stroke(Color.white.opacity(0.18), lineWidth: 1)
                             )
-                            .accessibilityLabel(label(for: day))
+                            .accessibilityLabel(label(for: day, dayIndex: dayIndex))
                     }
                 }
             }
         }
-        .padding(.top, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func color(for day: ContributionDay?) -> Color {
-        guard let day else { return Color.white.opacity(0.15) }
-        guard day.goalXP > 0 else { return Color(red: 0.9, green: 0.95, blue: 1.0) }
-        let ratio = min(Double(day.xpEarned) / Double(day.goalXP), 1)
+    private func weekLabel(for index: Int) -> String {
+        return "W\(index + 1)"
+    }
+
+    private func color(for day: ContributionDay?, dayIndex: Int) -> Color {
+        let isGoalDay = activeWeekdays.contains(dayIndex)
+        guard let day else {
+            return isGoalDay ? Color(red: 0.87, green: 0.92, blue: 1.0) : Color(red: 0.95, green: 0.96, blue: 0.98)
+        }
+        guard day.goalSeconds > 0 else {
+            return isGoalDay ? Color(red: 0.9, green: 0.95, blue: 1.0) : Color.white.opacity(0.12)
+        }
+        let ratio = min(Double(day.secondsSpent) / Double(day.goalSeconds), 1)
+        if !isGoalDay {
+            return Color.white.opacity(ratio > 0 ? 0.25 : 0.12)
+        }
         switch ratio {
         case 0:
-            return Color.white.opacity(0.25)
-        case 0..<0.5:
+            return Color.white.opacity(0.3)
+        case 0..<0.33:
             return Color(red: 0.74, green: 0.86, blue: 1.0)
-        case 0..<1:
+        case 0..<0.66:
             return Color(red: 0.52, green: 0.72, blue: 1.0)
+        case 0..<1:
+            return Color(red: 0.4, green: 0.62, blue: 0.98)
         default:
             return Color(red: 1.0, green: 0.8, blue: 0.4)
         }
     }
 
-    private func label(for day: ContributionDay?) -> String {
-        guard let day else { return "No practice recorded." }
-        if day.goalXP == 0 { return "Goal paused on \(dayFormatter.string(from: day.date))." }
+    private func label(for day: ContributionDay?,
+                       dayIndex: Int) -> String {
+        let isGoalDay = activeWeekdays.contains(dayIndex)
+        guard let day else {
+            return isGoalDay ? "No practice recorded." : "Rest day."
+        }
+        if day.goalSeconds == 0 { return "Goal paused on \(dayFormatter.string(from: day.date))." }
+        let goalLetters = max(goalDailySeconds / PracticeGoal.secondsPerLetter, 1)
+        let letters = max(day.secondsSpent / PracticeGoal.secondsPerLetter, 0)
         if day.didHitGoal { return "Goal met on \(dayFormatter.string(from: day.date))." }
-        return "\(day.xpEarned) of \(day.goalXP) XP on \(dayFormatter.string(from: day.date))."
+        return "\(letters) of \(goalLetters) letters on \(dayFormatter.string(from: day.date))."
     }
 }
 
 private struct EmptyTrackerView: View {
     var body: some View {
-        RoundedRectangle(cornerRadius: 24, style: .continuous)
-            .fill(Color(red: 0.94, green: 0.97, blue: 1.0))
-            .frame(height: 120)
-            .overlay(
-                VStack(spacing: 8) {
-                    Text("Your practice days will appear here.")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Color(red: 0.33, green: 0.42, blue: 0.61))
-                    Text("Earn XP to light up the calendar squares.")
-                        .font(.caption)
-                        .foregroundStyle(Color(red: 0.55, green: 0.63, blue: 0.75))
-                }
-            )
+        VStack(spacing: 8) {
+            Text("Your practice days will show up here.")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(ScribbleColors.secondary)
+            Text("Practice to light up each square.")
+                .font(.caption)
+                .foregroundStyle(ScribbleColors.secondary.opacity(0.7))
+        }
+        .frame(maxWidth: .infinity, minHeight: 80)
     }
 }
 

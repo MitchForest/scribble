@@ -14,8 +14,6 @@ final class FreePracticeViewModel: ObservableObject {
     @Published private(set) var timeline: [LetterTimelineItem] = []
     @Published private(set) var letterStates: [LetterState] = []
     @Published private(set) var currentLetterIndex: Int = 0
-    @Published var guidesEnabled: Bool = true
-
     let presets: [DrillPreset]
 
     init(presets: [DrillPreset] = DrillPreset.defaultPresets) {
@@ -30,10 +28,6 @@ final class FreePracticeViewModel: ObservableObject {
 
     func selectPreset(_ preset: DrillPreset) {
         targetText = preset.text
-    }
-
-    func toggleGuides() {
-        guidesEnabled.toggle()
     }
 
     func jump(to index: Int) {
