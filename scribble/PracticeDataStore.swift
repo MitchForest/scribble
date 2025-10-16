@@ -12,11 +12,14 @@ final class PracticeDataStore: ObservableObject {
     @Published private(set) var settings: UserSettings = .default
     @Published private(set) var latestFlowOutcomes: [String: LetterFlowOutcome] = [:]
     @Published private(set) var contentVersion: String
+    @Published private(set) var profile: UserProfile = .default
+    @Published private(set) var xpEvents: [XPEvent] = []
 
     private let persistenceURL: URL
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
     private let assetsVersion: String
+    private let calendar = Calendar(identifier: .gregorian)
 
     init() {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -107,11 +110,18 @@ final class PracticeDataStore: ObservableObject {
 
     func updateStrokeSize(_ size: StrokeSizePreference) {
         settings.strokeSize = size
+        settings.difficulty = difficulty(for: size)
         saveSnapshot()
     }
 
     func updateInputPreference(_ preference: InputPreference) {
         settings.inputPreference = preference
+        saveSnapshot()
+    }
+
+    func updateDifficulty(_ difficulty: PracticeDifficulty) {
+        settings.difficulty = difficulty
+        settings.strokeSize = strokeSize(for: difficulty)
         saveSnapshot()
     }
 
@@ -158,6 +168,12 @@ final class PracticeDataStore: ObservableObject {
             masteryByLetter = Dictionary(uniqueKeysWithValues: snapshot.mastery.map { ($0.letterId, $0) })
             settings = snapshot.settings ?? .default
             contentVersion = snapshot.contentVersion ?? assetsVersion
+            profile = snapshot.profile ?? .default
+            if let storedEvents = snapshot.xpEvents {
+                xpEvents = storedEvents.sorted(by: { $0.createdAt < $1.createdAt })
+            } else {
+                xpEvents = []
+            }
             if let outcomes = snapshot.flowOutcomes {
                 latestFlowOutcomes = Dictionary(uniqueKeysWithValues: outcomes.map { ($0.letterId, $0) })
             } else {
@@ -187,7 +203,9 @@ final class PracticeDataStore: ObservableObject {
                                             mastery: mastery,
                                             settings: settings,
                                             contentVersion: contentVersion,
-                                            flowOutcomes: orderedFlowOutcomes())
+                                            flowOutcomes: orderedFlowOutcomes(),
+                                            profile: profile,
+                                            xpEvents: xpEvents.sorted(by: { $0.createdAt < $1.createdAt }))
         do {
             let data = try encoder.encode(snapshot)
             try data.write(to: persistenceURL, options: .atomic)
@@ -210,6 +228,8 @@ final class PracticeDataStore: ObservableObject {
         }
         settings = .default
         contentVersion = assetsVersion
+        profile = .default
+        xpEvents = []
         saveSnapshot()
     }
 
@@ -231,5 +251,112 @@ final class PracticeDataStore: ObservableObject {
             memoryPassCount: 0,
             unlocked: unlocked
         )
+    }
+
+    func awardXP(amount: Int,
+                 category: XPEvent.Category,
+                 letterId: String? = nil,
+                 note: String? = nil,
+                 at date: Date = Date()) {
+        guard amount > 0 else { return }
+        let cappedAmount = min(amount, 9_999)
+        let event = XPEvent(amount: cappedAmount,
+                            createdAt: date,
+                            category: category,
+                            letterId: letterId,
+                            note: note)
+        xpEvents.append(event)
+        xpEvents.sort { $0.createdAt < $1.createdAt }
+        saveSnapshot()
+    }
+
+    func updateGoal(_ goal: PracticeGoal) {
+        profile.goal = goal
+        saveSnapshot()
+    }
+
+    func updateAvatarSeed(_ seed: String) {
+        profile.avatarSeed = seed
+        saveSnapshot()
+    }
+
+    func updateDisplayName(_ name: String) {
+        profile.displayName = name
+        saveSnapshot()
+    }
+
+    func xpEarned(on date: Date) -> Int {
+        let anchor = startOfDay(for: date)
+        return xpTotalsByDay()[anchor, default: 0]
+    }
+
+    func dailyProgressRatio(for date: Date = Date()) -> Double {
+        let goal = max(profile.goal.dailyXP, 1)
+        guard goal > 0 else { return 0 }
+        return min(Double(xpEarned(on: date)) / Double(goal), 1)
+    }
+
+    func didHitGoal(on date: Date) -> Bool {
+        guard profile.goal.dailyXP > 0 else { return false }
+        return xpEarned(on: date) >= profile.goal.dailyXP
+    }
+
+    func contributions(forDays days: Int = 42, endingAt endDate: Date = Date()) -> [ContributionDay] {
+        guard days > 0 else { return [] }
+        let goal = profile.goal.dailyXP
+        let xpByDay = xpTotalsByDay()
+        let endAnchor = startOfDay(for: endDate)
+        var contributions: [ContributionDay] = []
+        contributions.reserveCapacity(days)
+
+        for offset in stride(from: days - 1, through: 0, by: -1) {
+            guard let date = calendar.date(byAdding: .day, value: -offset, to: endAnchor) else { continue }
+            let anchor = startOfDay(for: date)
+            let earned = xpByDay[anchor, default: 0]
+            contributions.append(ContributionDay(date: anchor,
+                                                 xpEarned: earned,
+                                                 goalXP: goal))
+        }
+        return contributions
+    }
+
+    func todayContribution() -> ContributionDay {
+        let today = startOfDay(for: Date())
+        return ContributionDay(date: today,
+                               xpEarned: xpEarned(on: today),
+                               goalXP: profile.goal.dailyXP)
+    }
+
+    func weeklyGoalSummary(endingAt date: Date = Date()) -> (hits: Int, target: Int) {
+        let recent = contributions(forDays: 7, endingAt: date)
+        let hits = recent.filter { $0.didHitGoal }.count
+        return (hits, profile.goal.activeDaysPerWeek)
+    }
+
+    private func xpTotalsByDay() -> [Date: Int] {
+        xpEvents.reduce(into: [:]) { partialResult, event in
+            let day = startOfDay(for: event.createdAt)
+            partialResult[day, default: 0] += event.amount
+        }
+    }
+
+    private func startOfDay(for date: Date) -> Date {
+        calendar.startOfDay(for: date)
+    }
+
+    private func strokeSize(for difficulty: PracticeDifficulty) -> StrokeSizePreference {
+        switch difficulty {
+        case .easy: return .large
+        case .medium: return .standard
+        case .hard: return .compact
+        }
+    }
+
+    private func difficulty(for strokeSize: StrokeSizePreference) -> PracticeDifficulty {
+        switch strokeSize {
+        case .large: return .easy
+        case .standard: return .medium
+        case .compact: return .hard
+        }
     }
 }

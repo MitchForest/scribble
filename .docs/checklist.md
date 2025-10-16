@@ -31,14 +31,19 @@
 - [x] Package TestFlight checklist with release notes and onboarding instructions.
 - [x] Gather pilot feedback checklist to capture session notes and follow-ups.
 
-## Next Build – Seamless Practice Flow
-- [ ] Replace home letter picker with `PracticeFlowView` (Begin button + mastery strip).
-- [ ] Implement looping model animation for target letter (always visible at top).
-- [ ] Build horizontal letter mastery strip with ✅/❌ status and tap-to-retry.
-- [ ] Reskin UI to light/kid palette; remove ScrollView to keep canvas stationary.
-- [ ] Allow finger/pencil choice via settings dropdown; persist selection.
-- [ ] Run three sequential attempts automatically (Trace → Dot → Free) on one row.
-- [ ] Loop animation until user starts stroke; replay between attempts.
-- [ ] Provide immediate validation after each attempt (no buttons).
-- [ ] Aggregate score, mark letter, auto-advance to next letter.
-- [ ] Update data model/state to track per-letter attempt outcomes.
+## Next Build – Free Practice Revamp
+- [ ] Audit practice architecture to resolve "Modifying state during view update" warnings and document required refactors.
+- [ ] Redesign the home screen: remove the letter grid, add a centered “Get Started” CTA, and surface Free vs Guided mode switching (Guided stubbed).
+- [ ] Integrate a DiceBear Adventurer avatar in the top-right profile button with resilient caching/offline fallback.
+- [ ] Create a gold-gradient circular progress ring around the user name that animates daily XP goal completion.
+- [ ] Extend the data model to capture users, daily/weekly XP goals (e.g., 100 XP × 5 days), and per-day XP events with streak tracking.
+- [ ] Render a GitHub-style contribution calendar summarizing daily XP vs goal with tooltips and legend.
+- [ ] Build the Free Practice workbench with drill presets, editable sentence input, and the handwriting canvas side-by-side.
+- [ ] Add playback controls for target sentences: play/pause, per-letter timeline, and dot scrubbing to jump to strokes.
+- [ ] Display the active practice line with up/down navigation and per-line reset controls.
+- [ ] Introduce a guides toggle that swaps between solid letters and dotted outlines with stroke start hints.
+- [ ] Remove finger input, default to Pencil-only, and tie Easy/Medium/Hard difficulty to pen width and correction strength via the profile sheet.
+- [ ] Improve stroke evaluation with difficulty-based smoothing, sequential stroke validation, automatic dot advancement, and haptic feedback.
+- [ ] Sync timeline/haptic events so completed strokes reveal the next target without manual steps.
+- [ ] Expose XP goal configuration, difficulty settings, and avatar preview inside the profile modal.
+- [ ] QA the updated flow, validate XP progression updates the ring/calendar, and add instrumentation or tests where practical.

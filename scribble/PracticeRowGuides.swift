@@ -14,9 +14,15 @@ struct PracticeRowGuides: View {
     var body: some View {
         Canvas { context, size in
             let fullWidth = size.width
+
             let topLine = Path { path in
                 path.move(to: CGPoint(x: 0, y: 0))
                 path.addLine(to: CGPoint(x: fullWidth, y: 0))
+            }
+
+            let midLine = Path { path in
+                path.move(to: CGPoint(x: 0, y: xHeightY))
+                path.addLine(to: CGPoint(x: fullWidth, y: xHeightY))
             }
 
             let baseline = Path { path in
@@ -24,31 +30,35 @@ struct PracticeRowGuides: View {
                 path.addLine(to: CGPoint(x: fullWidth, y: baselineY))
             }
 
-            let xHeightLine = Path { path in
-                path.move(to: CGPoint(x: 0, y: xHeightY))
-                path.addLine(to: CGPoint(x: fullWidth, y: xHeightY))
-            }
-
             let descenderLine = Path { path in
                 path.move(to: CGPoint(x: 0, y: descenderY))
                 path.addLine(to: CGPoint(x: fullWidth, y: descenderY))
             }
 
-            let topColor = Color(red: 0.64, green: 0.74, blue: 0.95)
-            let baselineColor = Color(red: 0.48, green: 0.58, blue: 0.89)
-            let descenderColor = Color(red: 0.76, green: 0.81, blue: 0.93)
+            let guideBlue = Color(red: 0.35, green: 0.53, blue: 0.86)
+            let dashedRed = Color(red: 0.87, green: 0.41, blue: 0.44)
 
-            context.stroke(topLine, with: .color(topColor), lineWidth: guideLineWidth)
-            context.stroke(baseline, with: .color(baselineColor), lineWidth: guideLineWidth * 1.2)
-            context.stroke(descenderLine, with: .color(descenderColor), lineWidth: guideLineWidth * 0.85)
+            context.stroke(topLine,
+                           with: .color(guideBlue.opacity(0.85)),
+                           lineWidth: guideLineWidth)
 
-            let dashedStyle = StrokeStyle(lineWidth: guideLineWidth, lineCap: .round, dash: [4, 6])
-            context.stroke(xHeightLine,
-                           with: .color(baselineColor.opacity(0.65)),
-                           style: dashedStyle)
+            context.stroke(baseline,
+                           with: .color(guideBlue.opacity(0.85)),
+                           lineWidth: guideLineWidth)
+
+            context.stroke(descenderLine,
+                           with: .color(guideBlue.opacity(0.65)),
+                           lineWidth: guideLineWidth)
+
+            let dashStyle = StrokeStyle(lineWidth: guideLineWidth * 0.7,
+                                        lineCap: .round,
+                                        dash: [8, 10])
+            context.stroke(midLine,
+                           with: .color(dashedRed),
+                           style: dashStyle)
         }
         .frame(width: width, height: ascender + descender)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Handwriting guides with top, dotted middle, baseline, and descender lines")
+        .accessibilityLabel("Handwriting guides with solid blue top and baseline, dashed red midline, and descender line")
     }
 }

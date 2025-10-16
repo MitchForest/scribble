@@ -4,7 +4,7 @@ import PencilKit
 struct PencilCanvasView: UIViewRepresentable {
     @Binding var drawing: PKDrawing
     var onDrawingChanged: (PKDrawing) -> Void
-    var allowFingerFallback: Bool = true
+    var allowFingerFallback: Bool = false
     var lineWidth: CGFloat = 6
 
     func makeUIView(context: Context) -> PKCanvasView {
