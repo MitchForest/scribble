@@ -3,337 +3,310 @@ import PencilKit
 import UIKit
 
 struct PracticeSessionView: View {
-    @EnvironmentObject private var dataStore: PracticeDataStore
-
     let letterId: String
+    let template: HandwritingTemplate
+    @Binding var stage: PracticeStage
+    let allowFingerInput: Bool
+    let isLeftHanded: Bool
+    let strokeSize: StrokeSizePreference
+    let hapticsEnabled: Bool
+    let onStageComplete: (StageOutcome) -> Void
 
-    private let rowAscender: CGFloat = 120
-    private let rowDescender: CGFloat = 60
-    private let deviationTolerance: CGFloat = 36
-    private let startTolerance: CGFloat = 28
+    private let canvasPadding: CGFloat = 80
 
-    private let enabledModes: [PracticeMode] = [.trace]
-    @State private var mode: PracticeMode = .trace
-    @State private var template: HandwritingTemplate?
     @State private var scaledTemplate: ScaledTemplate?
-    @State private var lastScaledWidth: CGFloat?
-    @State private var loadError: String?
-
     @State private var drawing = PKDrawing()
     @State private var strokeProgress: [CGFloat] = []
     @State private var previousStrokeCount = 0
-    @State private var lastWarning: WarningIdentifier?
-    @State private var warningMessage: String?
+    @State private var currentDotIndex = 0
+    @State private var stageCompleted = false
+    @State private var stageFeedback: StageOutcome?
+    @State private var animationToken = 0
+    @State private var hasUserDrawn = false
+    @State private var evaluationWorkItem: DispatchWorkItem?
+    @State private var stageStart = Date()
 
-    @State private var scoreResult: ScoreResult?
-    @State private var tips: [TipMessage] = []
-    @State private var showResultBanner = false
-    @State private var hintUsed = false
-    @State private var startedAt = Date()
-    @State private var unlockMessage: String?
-    @State private var animationToken: Int = 0
-
-    private var isLeftHanded: Bool {
-        dataStore.settings.isLeftHanded
+    private var rowMetrics: RowMetrics {
+        strokeSize.metrics
     }
 
-    private var hapticsEnabled: Bool {
-        dataStore.settings.hapticsEnabled
+    private var rowAscender: CGFloat {
+        rowMetrics.ascender
+    }
+
+    private var rowDescender: CGFloat {
+        rowMetrics.descender
+    }
+
+    private var rowHeight: CGFloat {
+        rowAscender + rowDescender
+    }
+
+    private var canvasHeight: CGFloat {
+        rowHeight + canvasPadding
+    }
+
+    private var practiceLineWidth: CGFloat {
+        switch strokeSize {
+        case .large: return 8
+        case .standard: return 6
+        case .compact: return 5
+        }
+    }
+
+    private var guideLineWidth: CGFloat {
+        switch strokeSize {
+        case .large: return 6
+        case .standard: return 5
+        case .compact: return 4
+        }
+    }
+
+    private var startDotDiameter: CGFloat {
+        switch strokeSize {
+        case .large: return 20
+        case .standard: return 16
+        case .compact: return 14
+        }
+    }
+
+    private var userInkWidth: CGFloat {
+        switch strokeSize {
+        case .large: return 7
+        case .standard: return 6
+        case .compact: return 5
+        }
+    }
+
+    private var toleranceScale: CGFloat {
+        let standardAscender = StrokeSizePreference.standard.metrics.ascender
+        guard standardAscender > 0 else { return 1 }
+        return rowAscender / standardAscender
+    }
+
+    private var startTolerance: CGFloat {
+        28 * toleranceScale
+    }
+
+    private var deviationTolerance: CGFloat {
+        36 * toleranceScale
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                header
-                if enabledModes.count > 1 {
-                    modeSelector
-                }
+        VStack(spacing: 20) {
+        TargetLetterLoopView(template: template,
+                             animationToken: animationToken,
+                             stage: stage,
+                             isLeftHanded: isLeftHanded,
+                             shouldAnimate: !hasUserDrawn,
+                             lineWidth: practiceLineWidth)
+                .frame(height: 150)
 
-                GeometryReader { proxy in
-                    ZStack(alignment: .topLeading) {
-                        if let scaled = scaledTemplate(for: proxy.size.width) {
-                            PracticeRowGuides(width: proxy.size.width,
-                                              ascender: rowAscender,
-                                              descender: rowDescender,
-                                              scaledXHeight: scaled.scaledXHeight)
-
-                            TemplateOverlayView(strokes: scaled.strokes,
-                                                progress: strokeProgress,
-                                                mode: mode)
-
-                            PencilCanvasView(drawing: $drawing, onDrawingChanged: { updated in
-                                processDrawingChange(updated, scaledTemplate: scaled)
-                            }, allowFingerFallback: true)
-                            .allowsHitTesting(mode != .trace || strokeProgress.last ?? 0 >= 1)
-
-                            if let warningMessage {
-                                WarningToast(text: warningMessage)
-                                    .transition(.opacity.combined(with: .move(edge: .top)))
-                                    .padding()
-                            }
-                        } else if let loadError {
-                            Text(loadError)
-                                .foregroundStyle(.secondary)
-                                .padding()
-                        } else {
-                            ProgressView("Loading template…")
-                                .padding()
-                        }
-                    }
-                }
-                .frame(height: rowAscender + rowDescender + 80)
-                .clipShape(RoundedRectangle(cornerRadius: 18))
-                .shadow(color: Color.black.opacity(0.08), radius: 16, x: 0, y: 6)
-                .padding(.horizontal, 8)
-                .background(Color(.systemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 20))
-                .onChange(of: drawing) { _, newDrawing in
-                    if newDrawing.strokes.isEmpty {
-                        previousStrokeCount = 0
-                        lastWarning = nil
-                        warningMessage = nil
-                        startedAt = Date()
-                    }
-                }
-
-                if enabledModes.contains(.ghost), mode == .ghost {
-                    hintButton
-                }
-
-                controlBar
-
-                if showResultBanner, let scoreResult {
-                    ScoreBanner(result: scoreResult, tips: tips)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-
-                if let unlockMessage {
-                    UnlockBanner(message: unlockMessage)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-
-                Spacer(minLength: 24)
+            GeometryReader { proxy in
+                practiceCanvas(size: proxy.size)
             }
-            .padding(.horizontal)
-        }
-        .background(Color(.systemGroupedBackground))
-        .navigationBarTitleDisplayMode(.inline)
-        .onAppear {
-            loadTemplateIfNeeded()
-            startedAt = Date()
-        }
-        .onChange(of: template?.id) { _, newId in
-            if newId != nil {
-                resetSession()
+            .frame(height: canvasHeight)
+
+            controlBar
+
+            if let feedback = stageFeedback {
+                StageResultBanner(stage: feedback.stage, score: feedback.score)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
         }
-        .onChange(of: dataStore.settings.isLeftHanded) { _, _ in
-            scaledTemplate = nil
-            lastScaledWidth = nil
-            resetSession()
-        }
-        .onChange(of: mode) { _, newMode in
-            handleModeChange(newMode)
-        }
-        .animation(.easeInOut(duration: 0.3), value: warningMessage)
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showResultBanner)
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: unlockMessage)
+        .padding(.horizontal, 24)
+        .onAppear { resetCanvas() }
+        .onChange(of: stage) { _ in resetCanvas() }
+        .onChange(of: strokeSize) { _ in handleStrokeSizeChange() }
+        .onDisappear { evaluationWorkItem?.cancel() }
     }
 
-    private var header: some View {
-        let mastery = dataStore.mastery(for: letterId)
-        return VStack(alignment: .leading, spacing: 8) {
-            Text(dataStore.displayName(for: letterId))
-                .font(.largeTitle.weight(.bold))
+    private func practiceCanvas(size: CGSize) -> some View {
+        let width = size.width
+        let height = size.height
+        let verticalInset = max(0, (height - rowHeight) / 2)
+        let scaled = scaledTemplate(for: width)
+        return ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: 28)
+                .fill(Color(red: 0.96, green: 0.98, blue: 1.0))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 28)
+                        .stroke(Color(red: 0.78, green: 0.86, blue: 1.0).opacity(0.7), lineWidth: 2)
+                )
+                .frame(width: width, height: height)
+                .shadow(color: Color.black.opacity(0.05), radius: 12, x: 0, y: 6)
 
-            if mastery.bestScore > 0 {
-                Text("Best score \(mastery.bestScore)")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+            if let scaled {
+                PracticeRowGuides(width: width,
+                                  ascender: rowAscender,
+                                  descender: rowDescender,
+                                  scaledXHeight: scaled.scaledXHeight,
+                                  guideLineWidth: guideLineWidth)
+                .padding(.vertical, verticalInset)
+
+                PracticeOverlayView(stage: stage,
+                                     strokes: scaled.strokes,
+                                     progress: strokeProgress,
+                                     currentDotIndex: currentDotIndex,
+                                     practiceLineWidth: practiceLineWidth,
+                                     guideLineWidth: guideLineWidth,
+                                     startDotSize: startDotDiameter)
+                .padding(.vertical, verticalInset)
+
+                PencilCanvasView(drawing: $drawing,
+                                 onDrawingChanged: { updated in
+                                     processDrawingChange(updated, scaledTemplate: scaled)
+                                 },
+                                 allowFingerFallback: allowFingerInput,
+                                 lineWidth: userInkWidth)
+                .padding(.vertical, verticalInset)
+                .allowsHitTesting(!stageCompleted)
+                .background(Color.clear)
+
+                if let warningMessage = warningMessage {
+                    WarningToast(text: warningMessage)
+                        .padding(.top, verticalInset + 12)
+                        .padding(.horizontal)
+                        .transition(.opacity)
+                }
             } else {
-                Text("Let's get started with Trace mode.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-    }
-
-    private var modeSelector: some View {
-        Picker("Mode", selection: $mode) {
-            ForEach(PracticeMode.allCases) { mode in
-                Text(mode.title).tag(mode)
-            }
-        }
-        .pickerStyle(.segmented)
-        .accessibilityLabel("Practice mode")
-    }
-
-    private var hintButton: some View {
-        Button {
-            playHintAnimation()
-            hintUsed = true
-        } label: {
-            Label("Show Hint", systemImage: "lightbulb")
-                .labelStyle(.titleAndIcon)
-        }
-        .buttonStyle(.bordered)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityLabel("Show tracing hint")
     }
 
     private var controlBar: some View {
-        Group {
-            if isLeftHanded {
-                HStack {
-                    Button(action: evaluateAttempt) {
-                        Label("Evaluate", systemImage: "checkmark.circle.fill")
-                            .labelStyle(.titleAndIcon)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(template == nil)
-
-                    Spacer()
-
-                    Button(role: .destructive, action: resetSession) {
-                        Label("Reset", systemImage: "arrow.counterclockwise")
-                            .labelStyle(.titleAndIcon)
-                    }
-                    .buttonStyle(.bordered)
-                }
-            } else {
-                HStack {
-                    Button(role: .destructive, action: resetSession) {
-                        Label("Reset", systemImage: "arrow.counterclockwise")
-                            .labelStyle(.titleAndIcon)
-                    }
-                    .buttonStyle(.bordered)
-
-                    Spacer()
-
-                    Button(action: evaluateAttempt) {
-                        Label("Evaluate", systemImage: "checkmark.circle.fill")
-                            .labelStyle(.titleAndIcon)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(template == nil)
-                }
+        HStack {
+            Button {
+                clearCurrentDrawing()
+            } label: {
+                Image(systemName: "arrow.counterclockwise.circle.fill")
+                    .font(.system(size: 26, weight: .semibold))
+                    .foregroundColor(Color(red: 0.22, green: 0.34, blue: 0.52))
+                    .padding(10)
+                    .background(Circle().fill(Color.white.opacity(0.96)))
             }
-        }
-        .accessibilityElement(children: .contain)
-    }
+            .accessibilityLabel("Clear drawing")
+            .buttonStyle(.plain)
+            .shadow(color: Color.black.opacity(0.12), radius: 6, x: 0, y: 4)
 
-    private func loadTemplateIfNeeded() {
-        guard template == nil else { return }
-        do {
-            template = try HandwritingTemplateLoader.loadTemplate(for: letterId)
-        } catch TemplateLoaderError.resourceMissing(let message) {
-            loadError = message
-        } catch TemplateLoaderError.decodeFailed(let message) {
-            loadError = message
-        } catch {
-            loadError = "Unexpected error loading template: \(error)"
+            Spacer()
         }
+        .padding(.horizontal, 8)
     }
 
     private func scaledTemplate(for width: CGFloat) -> ScaledTemplate? {
-        guard let template, width > 0 else {
-            return template != nil ? scaledTemplate : nil
-        }
-
-        if let cached = scaledTemplate,
-           let cachedWidth = lastScaledWidth,
-           abs(cachedWidth - width) < 1 {
+        if let cached = scaledTemplate, let lastWidth = scaledTemplate?.width, abs(lastWidth - width) < 1 {
             return cached
         }
-
         let newScaled = ScaledTemplate(template: template,
                                        availableWidth: width,
                                        rowAscender: rowAscender,
                                        rowDescender: rowDescender,
                                        isLeftHanded: isLeftHanded)
         scaledTemplate = newScaled
-        lastScaledWidth = width
         strokeProgress = Array(repeating: 0, count: newScaled.strokes.count)
         startAnimationIfNeeded()
         return newScaled
     }
 
-    private func resetSession() {
+    @State private var warningMessage: String?
+
+    private func resetCanvas() {
+        evaluationWorkItem?.cancel()
         drawing = PKDrawing()
         previousStrokeCount = 0
-        lastWarning = nil
+        currentDotIndex = 0
+        stageCompleted = false
+        stageFeedback = nil
         warningMessage = nil
-        scoreResult = nil
-        tips = []
-        showResultBanner = false
-        hintUsed = false
-        unlockMessage = nil
-        strokeProgress = Array(repeating: 0, count: scaledTemplate?.strokes.count ?? 0)
-        startedAt = Date()
+        hasUserDrawn = false
         animationToken += 1
+        strokeProgress = Array(repeating: 0, count: scaledTemplate?.strokes.count ?? 0)
+        stageStart = Date()
         startAnimationIfNeeded()
     }
 
-    private func handleModeChange(_ mode: PracticeMode) {
-        resetSession()
+    private func clearCurrentDrawing() {
+        evaluationWorkItem?.cancel()
+        drawing = PKDrawing()
+        previousStrokeCount = 0
+        currentDotIndex = 0
+        stageCompleted = false
+        stageFeedback = nil
+        warningMessage = nil
+        hasUserDrawn = false
+        animationToken += 1
+        strokeProgress = Array(repeating: 0, count: scaledTemplate?.strokes.count ?? 0)
+        stageStart = Date()
+        startAnimationIfNeeded()
+    }
+
+    private func handleStrokeSizeChange() {
+        scaledTemplate = nil
+        resetCanvas()
     }
 
     private func startAnimationIfNeeded() {
         guard let scaledTemplate else { return }
-        animationToken += 1
-        strokeProgress = Array(repeating: 0, count: scaledTemplate.strokes.count)
-
-        switch mode {
-        case .trace:
-            animateStrokesSequentially(token: animationToken)
-        case .ghost, .memory:
-            break
+        guard stage == .guidedTrace else { return }
+        if hasUserDrawn {
+            strokeProgress = Array(repeating: 1.0, count: scaledTemplate.strokes.count)
+            return
         }
-    }
-
-    private func animateStrokesSequentially(token: Int) {
-        guard let scaledTemplate else { return }
-        let baseDelay = 0.2
-        let durationPerStroke = 1.0
-
-        for index in scaledTemplate.strokes.indices {
-            let delay = baseDelay + (Double(index) * (durationPerStroke + 0.2))
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                guard token == animationToken else { return }
-                withAnimation(.linear(duration: durationPerStroke)) {
-                    strokeProgress[index] = 1.0
-                }
-            }
-        }
-
-        let totalDuration = baseDelay + Double(scaledTemplate.strokes.count) * (durationPerStroke + 0.2)
-        DispatchQueue.main.asyncAfter(deadline: .now() + totalDuration) {
-            guard token == animationToken else { return }
-            if drawing.strokes.isEmpty && mode == .trace {
-                animateStrokesSequentially(token: token)
-            }
-        }
-    }
-
-    private func playHintAnimation() {
-        guard let scaledTemplate else { return }
-        animationToken += 1
         let token = animationToken
         strokeProgress = Array(repeating: 0, count: scaledTemplate.strokes.count)
+        let baseDelay = 0.2
+        let duration: Double = 1.0
 
-        let durationPerStroke = 0.8
         for index in scaledTemplate.strokes.indices {
-            let delay = Double(index) * (durationPerStroke + 0.1)
+            let delay = baseDelay + Double(index) * (duration + 0.2)
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                 guard token == animationToken else { return }
-                withAnimation(.linear(duration: durationPerStroke)) {
+                withAnimation(.linear(duration: duration)) {
                     strokeProgress[index] = 1.0
                 }
             }
         }
+
+        let total = baseDelay + Double(scaledTemplate.strokes.count) * (duration + 0.2)
+        DispatchQueue.main.asyncAfter(deadline: .now() + total) {
+            guard token == animationToken else { return }
+            if !stageCompleted && !hasUserDrawn {
+                startAnimationIfNeeded()
+            }
+        }
+    }
+
+    private func scheduleEvaluation(after delay: TimeInterval) {
+        evaluationWorkItem?.cancel()
+        let workItem = DispatchWorkItem { evaluateStage() }
+        evaluationWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+    }
+
+    private func evaluateStage() {
+        guard !stageCompleted, let scaledTemplate else { return }
+        let evaluator = PracticeEvaluator(template: scaledTemplate,
+                                          drawing: drawing,
+                                          startTolerance: startTolerance,
+                                          deviationTolerance: deviationTolerance)
+        let result = evaluator.evaluate()
+        let tips = generateTips(from: result)
+        let outcome = StageOutcome(stage: stage,
+                                   score: result,
+                                   tips: tips,
+                                   duration: Date().timeIntervalSince(stageStart))
+        stageCompleted = true
+        stageFeedback = outcome
+        withAnimation(.easeInOut(duration: 0.25)) {
+            warningMessage = nil
+        }
+        onStageComplete(outcome)
     }
 
     private func processDrawingChange(_ drawing: PKDrawing, scaledTemplate: ScaledTemplate) {
+        guard !stageCompleted else { return }
         let strokes = drawing.strokes
         defer { previousStrokeCount = strokes.count }
 
@@ -351,7 +324,10 @@ struct PracticeSessionView: View {
                 return
             }
             animationToken += 1
-            lastWarning = nil
+            hasUserDrawn = true
+            if stage == .dotGuided {
+                currentDotIndex = min(strokeIndex + 1, scaledTemplate.strokes.count)
+            }
         }
 
         if let latestStroke = strokes.last {
@@ -359,6 +335,18 @@ struct PracticeSessionView: View {
             checkDeviation(stroke: latestStroke,
                            strokeIndex: strokeIndex,
                            templateStroke: scaledTemplate.strokes[strokeIndex])
+        }
+
+        if stage == .guidedTrace || stage == .dotGuided {
+            let expectedCount = scaledTemplate.strokes.count
+            if strokes.count >= expectedCount {
+                scheduleEvaluation(after: 0.2)
+            }
+        } else {
+            let expectedCount = scaledTemplate.strokes.count
+            if strokes.count >= expectedCount {
+                scheduleEvaluation(after: 0.8)
+            }
         }
     }
 
@@ -370,7 +358,7 @@ struct PracticeSessionView: View {
                                                  tolerance: startTolerance)
         if !isValid {
             triggerWarning(.init(strokeIndex: strokeIndex, kind: .start),
-                           message: "Start at the green dot.")
+                           message: "Start at the green dot")
         }
         return isValid
     }
@@ -384,9 +372,7 @@ struct PracticeSessionView: View {
             var nearest = CGFloat.greatestFiniteMagnitude
             for templatePoint in templateStroke.sampledPoints {
                 let distance = hypot(point.x - templatePoint.x, point.y - templatePoint.y)
-                if distance < nearest {
-                    nearest = distance
-                }
+                nearest = min(nearest, distance)
                 if nearest < deviationTolerance / 2 {
                     break
                 }
@@ -396,136 +382,107 @@ struct PracticeSessionView: View {
 
         if maxDistance > deviationTolerance {
             triggerWarning(.init(strokeIndex: strokeIndex, kind: .deviation),
-                           message: "Stay close to the path.")
+                           message: "Stay close to the path")
         }
     }
 
     private func triggerWarning(_ identifier: WarningIdentifier, message: String) {
-        guard lastWarning != identifier else { return }
-        lastWarning = identifier
         warningMessage = message
         if hapticsEnabled {
             HapticsManager.shared.warning()
         }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
-            if self.lastWarning == identifier {
-                self.warningMessage = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            if !stageCompleted {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    warningMessage = nil
+                }
             }
-        }
-    }
-
-    private func evaluateAttempt() {
-        guard let scaledTemplate else { return }
-
-        let evaluator = PracticeEvaluator(template: scaledTemplate,
-                                          drawing: drawing,
-                                          startTolerance: startTolerance,
-                                          deviationTolerance: deviationTolerance)
-        let result = evaluator.evaluate()
-        scoreResult = result
-        tips = generateTips(from: result)
-        showResultBanner = true
-
-        let completedAt = Date()
-        let duration = completedAt.timeIntervalSince(startedAt)
-
-        let drawingData = drawing.dataRepresentation()
-
-        let unlockEvent = dataStore.recordAttempt(letterId: letterId,
-                                                  mode: mode,
-                                                  result: result,
-                                                  tips: tips.map(\.id),
-                                                  hintUsed: hintUsed,
-                                                  drawingData: drawingData,
-                                                  duration: duration,
-                                                  startedAt: startedAt,
-                                                  completedAt: completedAt)
-
-        if hapticsEnabled {
-            if result.total >= 80 {
-                HapticsManager.shared.success()
-            } else {
-                HapticsManager.shared.notice()
-            }
-        }
-
-        if let event = unlockEvent {
-            let displayName = dataStore.displayName(for: event.newlyUnlockedLetterId)
-            unlockMessage = "\(displayName) unlocked! Ready when you are."
         }
     }
 
     private func generateTips(from result: ScoreResult) -> [TipMessage] {
-        var tipIds: [String] = []
-        if result.start < 80 {
-            tipIds.append("start-point")
-        }
-        if result.order < 80 {
-            tipIds.append("stroke-order")
-        }
-        if result.direction < 80 {
-            tipIds.append("direction")
-        }
-        if result.shape < 80 {
-            tipIds.append("shape-tighten")
-        }
-        tipIds = Array(tipIds.prefix(2))
-        return tipIds.compactMap { id in
+        var ids: [String] = []
+        if result.start < 80 { ids.append("start-point") }
+        if result.order < 80 { ids.append("stroke-order") }
+        if result.direction < 80 { ids.append("direction") }
+        if result.shape < 80 { ids.append("shape-tighten") }
+        return ids.prefix(2).compactMap { id in
             guard let text = TipMessage.catalog[id] else { return nil }
             return TipMessage(id: id, text: text)
         }
     }
 }
 
-// MARK: - Supporting Views & Types
-
-private struct TemplateOverlayView: View {
+private struct PracticeOverlayView: View {
+    let stage: PracticeStage
     let strokes: [ScaledStroke]
     let progress: [CGFloat]
-    let mode: PracticeMode
+    let currentDotIndex: Int
+    let practiceLineWidth: CGFloat
+    let guideLineWidth: CGFloat
+    let startDotSize: CGFloat
 
     var body: some View {
-        Group {
-            switch mode {
-            case .trace:
-                traceBody
-            case .ghost:
-                ghostBody
-            case .memory:
-                EmptyView()
-            }
-        }
-        .accessibilityHidden(true)
-    }
-
-    private var traceBody: some View {
         ZStack {
-            ForEach(Array(strokes.enumerated()), id: \.element.id) { index, stroke in
-                stroke.path
-                    .trim(from: 0, to: min(progress[safe: index] ?? 0, 1))
-                    .stroke(Color.blue.opacity(0.85),
-                            style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
-
-                StartDot(position: stroke.startPoint)
-            }
+            baseLetterShape
+            stageOverlay
         }
     }
 
-    private var ghostBody: some View {
-        ZStack {
-            ForEach(strokes) { stroke in
-                stroke.path
-                    .stroke(Color.blue.opacity(0.18), lineWidth: 6)
-                StartDot(position: stroke.startPoint)
-                    .opacity(0.6)
-            }
+    private var baseLetterShape: some View {
+        let baseColor = Color(red: 0.55, green: 0.66, blue: 0.94)
+        let opacity: Double
+        switch stage {
+        case .guidedTrace:
+            opacity = 0.35
+        case .dotGuided:
+            opacity = 0.4
+        case .freePractice:
+            opacity = 0.3
+        }
 
-            ForEach(Array(strokes.enumerated()), id: \.element.id) { index, stroke in
+        return ForEach(Array(strokes.enumerated()), id: \.offset) { _, stroke in
+            stroke.path
+                .stroke(baseColor.opacity(opacity),
+                        style: StrokeStyle(lineWidth: guideLineWidth,
+                                           lineCap: .round,
+                                           lineJoin: .round))
+        }
+    }
+
+    @ViewBuilder
+    private var stageOverlay: some View {
+        switch stage {
+        case .guidedTrace:
+            ForEach(Array(strokes.enumerated()), id: \.offset) { index, stroke in
                 stroke.path
                     .trim(from: 0, to: min(progress[safe: index] ?? 0, 1))
-                    .stroke(Color.blue.opacity(0.65),
-                            style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
+                    .stroke(Color(red: 0.22, green: 0.44, blue: 0.98),
+                            style: StrokeStyle(lineWidth: practiceLineWidth,
+                                               lineCap: .round,
+                                               lineJoin: .round))
+                StartDot(position: stroke.startPoint, diameter: startDotSize)
+            }
+        case .dotGuided:
+            ForEach(Array(strokes.enumerated()), id: \.offset) { index, stroke in
+                stroke.path
+                    .stroke(Color(red: 0.53, green: 0.65, blue: 0.98).opacity(0.5),
+                            style: StrokeStyle(lineWidth: guideLineWidth,
+                                               lineCap: .round,
+                                               lineJoin: .round,
+                                               dash: [10, 12]))
+                if index == currentDotIndex {
+                    StartDot(position: stroke.startPoint, diameter: startDotSize)
+                        .scaleEffect(1.15)
+                }
+            }
+        case .freePractice:
+            ForEach(Array(strokes.enumerated()), id: \.offset) { _, stroke in
+                stroke.path
+                    .stroke(Color(red: 0.37, green: 0.55, blue: 0.94).opacity(0.35),
+                            style: StrokeStyle(lineWidth: guideLineWidth,
+                                               lineCap: .round,
+                                               lineJoin: .round))
             }
         }
     }
@@ -533,109 +490,146 @@ private struct TemplateOverlayView: View {
 
 private struct StartDot: View {
     let position: CGPoint
+    let diameter: CGFloat
 
     var body: some View {
         Circle()
-            .fill(Color.green)
-            .frame(width: 12, height: 12)
+            .fill(Color(red: 0.35, green: 0.8, blue: 0.46))
+            .overlay(
+                Circle()
+                    .stroke(Color.white, lineWidth: 2)
+            )
+            .frame(width: diameter, height: diameter)
             .position(position)
-            .accessibilityHidden(true)
     }
 }
 
-private struct WarningToast: View {
-    let text: String
+private struct StageResultBanner: View {
+    let stage: PracticeStage
+    let score: ScoreResult
 
     var body: some View {
-        Text(text)
-            .font(.callout.weight(.semibold))
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(.thinMaterial, in: Capsule())
-    }
-}
-
-private struct ScoreBanner: View {
-    let result: ScoreResult
-    let tips: [TipMessage]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text("Score")
-                    .font(.headline)
-                Text("\(result.total)")
-                    .font(.system(size: 36, weight: .bold, design: .rounded))
-            }
-
+        VStack(spacing: 8) {
+            Text("\(stage.displayName) Score")
+                .font(.headline)
+            Text("\(score.total)")
+                .font(.system(size: 34, weight: .bold, design: .rounded))
             HStack(spacing: 16) {
-                componentView(title: "Shape", value: result.shape)
-                componentView(title: "Order", value: result.order)
-                componentView(title: "Direction", value: result.direction)
-                componentView(title: "Start", value: result.start)
+                metricView(label: "Shape", value: score.shape)
+                metricView(label: "Order", value: score.order)
+                metricView(label: "Direction", value: score.direction)
+                metricView(label: "Start", value: score.start)
             }
+            .font(.caption)
+        }
+        .padding()
+        .frame(maxWidth: .infinity)
+        .background(RoundedRectangle(cornerRadius: 18).fill(Color(.secondarySystemBackground)))
+    }
 
-            if !tips.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Try this next:")
-                        .font(.subheadline.weight(.semibold))
-                    ForEach(tips) { tip in
-                        Label(tip.text, systemImage: "lightbulb")
-                            .font(.subheadline)
-                            .labelStyle(.titleAndIcon)
+    private func metricView(label: String, value: Int) -> some View {
+        VStack(spacing: 4) {
+            Text(label.uppercased())
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text("\(value)")
+                .font(.subheadline.weight(.semibold))
+        }
+    }
+}
+
+private struct TargetLetterLoopView: View {
+    let template: HandwritingTemplate
+    let animationToken: Int
+    let stage: PracticeStage
+    let isLeftHanded: Bool
+    let shouldAnimate: Bool
+    let lineWidth: CGFloat
+    @State private var scaledTemplate: ScaledTemplate?
+    @State private var strokeProgress: [CGFloat] = []
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack {
+                if let scaled = scaledTemplate(for: proxy.size.width) {
+                    ForEach(Array(scaled.strokes.enumerated()), id: \.offset) { index, stroke in
+                        stroke.path
+                            .trim(from: 0, to: min(strokeProgress[safe: index] ?? 0, 1))
+                            .stroke(Color.orange.opacity(0.9),
+                                    style: StrokeStyle(lineWidth: lineWidth,
+                                                       lineCap: .round,
+                                                       lineJoin: .round))
                     }
+                } else {
+                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
         }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 16).fill(Color(.secondarySystemBackground)))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(
-            "Score \(result.total). Shape \(result.shape). Order \(result.order). Direction \(result.direction). Start \(result.start)." +
-            (tips.isEmpty ? "" : " Tips: \(tips.map(\.text).joined(separator: ", ")).")
-        )
+        .onAppear { startLoop() }
+        .onChange(of: animationToken) { _ in startLoop() }
+        .onChange(of: stage) { _ in startLoop() }
+        .onChange(of: shouldAnimate) { newValue in
+            if newValue {
+                startLoop()
+            } else if let scaledTemplate {
+                strokeProgress = Array(repeating: 1.0, count: scaledTemplate.strokes.count)
+            }
+        }
     }
 
-    private func componentView(title: String, value: Int) -> some View {
-        VStack(spacing: 4) {
-            Text(title.uppercased())
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
-            Text("\(value)")
-                .font(.headline)
+    private func scaledTemplate(for width: CGFloat) -> ScaledTemplate? {
+        if let scaledTemplate, abs(scaledTemplate.width - width) < 1 {
+            return scaledTemplate
         }
-        .frame(maxWidth: .infinity)
+        let newScaled = ScaledTemplate(template: template,
+                                       availableWidth: width,
+                                       rowAscender: 120,
+                                       rowDescender: 60,
+                                       isLeftHanded: isLeftHanded)
+        scaledTemplate = newScaled
+        strokeProgress = Array(repeating: 0, count: newScaled.strokes.count)
+        return newScaled
+    }
+
+    private func startLoop() {
+        guard let scaledTemplate else { return }
+        guard shouldAnimate else {
+            strokeProgress = Array(repeating: 1.0, count: scaledTemplate.strokes.count)
+            return
+        }
+        let token = animationToken
+        let baseDelay = 0.1
+        let duration: Double = 0.9
+        strokeProgress = Array(repeating: 0, count: scaledTemplate.strokes.count)
+        for index in scaledTemplate.strokes.indices {
+            let delay = baseDelay + Double(index) * (duration + 0.15)
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                guard token == animationToken else { return }
+                withAnimation(.linear(duration: duration)) {
+                    strokeProgress[index] = 1.0
+                }
+            }
+        }
+        let total = baseDelay + Double(scaledTemplate.strokes.count) * (duration + 0.15)
+        DispatchQueue.main.asyncAfter(deadline: .now() + total) {
+            guard token == animationToken else { return }
+             guard shouldAnimate else {
+                 strokeProgress = Array(repeating: 1.0, count: scaledTemplate.strokes.count)
+                 return
+             }
+            startLoop()
+        }
     }
 }
 
-private struct UnlockBanner: View {
-    let message: String
-
-    var body: some View {
-        HStack {
-            Image(systemName: "sparkles")
-            Text(message)
-                .font(.subheadline.weight(.semibold))
-        }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 16).fill(Color(.systemYellow).opacity(0.2)))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(message)
-    }
+private struct WarningIdentifier: Equatable {
+    let strokeIndex: Int
+    let kind: WarningKind
 }
 
-private struct TipMessage: Identifiable, Equatable {
-    let id: String
-    let text: String
-
-    static let catalog: [String: String] = [
-        "start-point": "Start at the green dot to build muscle memory.",
-        "stroke-order": "Follow the stroke order—write the tail last.",
-        "direction": "Trace the loop clockwise to keep the slant consistent.",
-        "shape-tighten": "Keep the curve closer to the guide for a tighter shape."
-    ]
+private enum WarningKind: Equatable {
+    case start
+    case deviation
 }
 
 struct ScaledTemplate: Equatable {
@@ -646,15 +640,16 @@ struct ScaledTemplate: Equatable {
     let strokes: [ScaledStroke]
     let scaledXHeight: CGFloat
     let letterWidth: CGFloat
+    let width: CGFloat
 
     init(template: HandwritingTemplate,
          availableWidth: CGFloat,
          rowAscender: CGFloat,
          rowDescender: CGFloat,
          isLeftHanded: Bool) {
-        let allPoints = template.strokes.flatMap(\.points)
-        let minX = allPoints.map(\.x).min() ?? 0
-        let maxX = allPoints.map(\.x).max() ?? 0
+        let allPoints = template.strokes.flatMap { $0.points }
+        let minX = allPoints.map { $0.x }.min() ?? 0
+        let maxX = allPoints.map { $0.x }.max() ?? 0
 
         let scale = rowAscender / CGFloat(template.metrics.ascender)
         let scaledLetterWidth = (CGFloat(maxX - minX) * scale)
@@ -669,7 +664,7 @@ struct ScaledTemplate: Equatable {
         }
 
         let sortedStrokes = template.strokes.sorted { $0.order < $1.order }
-        self.strokes = sortedStrokes.map { stroke in
+        self.strokes = sortedStrokes.enumerated().map { index, stroke in
             let convertedPoints = stroke.points.map(convertPoint)
             var path = Path()
             if let first = convertedPoints.first {
@@ -688,6 +683,7 @@ struct ScaledTemplate: Equatable {
 
         self.scaledXHeight = CGFloat(template.metrics.xHeight) * scale
         self.letterWidth = scaledLetterWidth
+        self.width = availableWidth
     }
 }
 
@@ -698,6 +694,11 @@ struct ScaledStroke: Identifiable, Equatable {
     let points: [CGPoint]
     let startPoint: CGPoint
     let endPoint: CGPoint
+
+    var directionVector: CGVector? {
+        guard let first = points.first, let last = points.last else { return nil }
+        return CGVector(dx: last.x - first.x, dy: last.y - first.y)
+    }
 
     var sampledPoints: [CGPoint] {
         let step = max(1, points.count / 60)
@@ -725,12 +726,10 @@ struct PracticeEvaluator {
         let shapeScore = scoreShape()
         let startScore = scoreStart()
 
-        let total = Int(
-            round(0.40 * Double(shapeScore)
-                  + 0.25 * Double(orderScore)
-                  + 0.20 * Double(directionScore)
-                  + 0.15 * Double(startScore))
-        )
+        let total = Int(round(0.40 * Double(shapeScore)
+                              + 0.25 * Double(orderScore)
+                              + 0.20 * Double(directionScore)
+                              + 0.15 * Double(startScore)))
 
         return ScoreResult(total: total,
                            shape: shapeScore,
@@ -772,16 +771,14 @@ struct PracticeEvaluator {
 
         for index in 0..<comparisons {
             guard let expectedRaw = expectedStrokes[index].directionVector,
-                  let actualRaw = actualStrokes[index].directionVector else {
-                continue
-            }
+                  let actualRaw = actualStrokes[index].directionVector else { continue }
 
             let expectedVector = expectedRaw.normalized()
             let actualVector = actualRaw.normalized()
             if expectedVector.isZero || actualVector.isZero { continue }
 
             let dot = max(-1.0, min(1.0, expectedVector.dot(actualVector)))
-            total += (dot + 1) / 2 // map -1...1 to 0...1
+            total += (dot + 1) / 2
             validComparisons += 1
         }
 
@@ -825,36 +822,19 @@ struct PracticeEvaluator {
     }
 }
 
-private enum WarningKind: Equatable {
-    case start
-    case deviation
-}
-
-private struct WarningIdentifier: Equatable {
-    let strokeIndex: Int
-    let kind: WarningKind
-}
-
-extension ScaledStroke {
-    var directionVector: CGVector? {
-        guard let first = points.first, let last = points.last else { return nil }
-        return CGVector(dx: last.x - first.x, dy: last.y - first.y)
-    }
-}
-
 private extension Collection {
     subscript(safe index: Index) -> Element? {
         indices.contains(index) ? self[index] : nil
     }
 }
 
-private extension PKStroke {
-    var directionVector: CGVector? {
-        guard let first = path.firstLocation,
-              let last = path.lastLocation else { return nil }
-        return CGVector(dx: last.x - first.x, dy: last.y - first.y)
+private extension PKStrokePath {
+    var firstLocation: CGPoint? {
+        first?.location
     }
+}
 
+private extension PKStroke {
     func sampledPoints(step: Int) -> [CGPoint] {
         var result: [CGPoint] = []
         var index = 0
@@ -864,16 +844,22 @@ private extension PKStroke {
             }
             index += 1
         }
-        if let last = path.lastLocation, result.last != last {
+        if let last = path.last?.location, result.last != last {
             result.append(last)
         }
         return result
+    }
+
+    var directionVector: CGVector? {
+        guard let first = path.firstLocation,
+              let last = path.last?.location else { return nil }
+        return CGVector(dx: last.x - first.x, dy: last.y - first.y)
     }
 }
 
 private extension CGVector {
     func normalized() -> CGVector {
-        let magnitude = self.magnitude
+        let magnitude = sqrt(Double(dx * dx + dy * dy))
         guard magnitude > 0 else { return .zero }
         let inverse = CGFloat(1 / magnitude)
         return CGVector(dx: dx * inverse, dy: dy * inverse)
@@ -883,30 +869,22 @@ private extension CGVector {
         Double(dx * other.dx + dy * other.dy)
     }
 
-    var magnitude: Double {
-        sqrt(Double(dx * dx + dy * dy))
-    }
-
     var isZero: Bool {
-        magnitude == 0
+        dx == 0 && dy == 0
     }
 }
 
-private extension PKStrokePath {
-    var firstLocation: CGPoint? {
-        first?.location
-    }
+private struct WarningToast: View {
+    let text: String
 
-    var lastLocation: CGPoint? {
-        var lastPoint: PKStrokePoint?
-        for point in self {
-            lastPoint = point
-        }
-        return lastPoint?.location
+    var body: some View {
+        Text(text)
+            .font(.callout.weight(.semibold))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(.ultraThinMaterial, in: Capsule())
     }
 }
-
-// MARK: - Haptics
 
 final class HapticsManager {
     static let shared = HapticsManager()

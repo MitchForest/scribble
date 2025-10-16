@@ -5,6 +5,7 @@ struct PracticeRowGuides: View {
     let ascender: CGFloat
     let descender: CGFloat
     let scaledXHeight: CGFloat
+    let guideLineWidth: CGFloat
 
     private var baselineY: CGFloat { ascender }
     private var xHeightY: CGFloat { ascender - scaledXHeight }
@@ -33,13 +34,17 @@ struct PracticeRowGuides: View {
                 path.addLine(to: CGPoint(x: fullWidth, y: descenderY))
             }
 
-            context.stroke(topLine, with: .color(.primary.opacity(0.35)), lineWidth: 1.5)
-            context.stroke(baseline, with: .color(.primary.opacity(0.35)), lineWidth: 1.5)
-            context.stroke(descenderLine, with: .color(.primary.opacity(0.2)), lineWidth: 1)
+            let topColor = Color(red: 0.64, green: 0.74, blue: 0.95)
+            let baselineColor = Color(red: 0.48, green: 0.58, blue: 0.89)
+            let descenderColor = Color(red: 0.76, green: 0.81, blue: 0.93)
 
-            let dashedStyle = StrokeStyle(lineWidth: 1.5, lineCap: .round, dash: [4, 6])
+            context.stroke(topLine, with: .color(topColor), lineWidth: guideLineWidth)
+            context.stroke(baseline, with: .color(baselineColor), lineWidth: guideLineWidth * 1.2)
+            context.stroke(descenderLine, with: .color(descenderColor), lineWidth: guideLineWidth * 0.85)
+
+            let dashedStyle = StrokeStyle(lineWidth: guideLineWidth, lineCap: .round, dash: [4, 6])
             context.stroke(xHeightLine,
-                           with: .color(.primary.opacity(0.3)),
+                           with: .color(baselineColor.opacity(0.65)),
                            style: dashedStyle)
         }
         .frame(width: width, height: ascender + descender)

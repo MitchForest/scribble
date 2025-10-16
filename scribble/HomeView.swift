@@ -35,7 +35,8 @@ struct HomeView: View {
             .navigationDestination(for: Route.self) { route in
                 switch route {
                 case .practice(let letterId):
-                    PracticeSessionView(letterId: letterId)
+                    PracticeFlowView(startingLetter: letterId)
+                        .environmentObject(dataStore)
                 }
             }
             .toolbar {

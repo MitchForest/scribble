@@ -30,3 +30,15 @@
 - [x] Verify persistence survives app relaunch and upgrades (`ContentVersion` checks).
 - [x] Package TestFlight checklist with release notes and onboarding instructions.
 - [x] Gather pilot feedback checklist to capture session notes and follow-ups.
+
+## Next Build – Seamless Practice Flow
+- [ ] Replace home letter picker with `PracticeFlowView` (Begin button + mastery strip).
+- [ ] Implement looping model animation for target letter (always visible at top).
+- [ ] Build horizontal letter mastery strip with ✅/❌ status and tap-to-retry.
+- [ ] Reskin UI to light/kid palette; remove ScrollView to keep canvas stationary.
+- [ ] Allow finger/pencil choice via settings dropdown; persist selection.
+- [ ] Run three sequential attempts automatically (Trace → Dot → Free) on one row.
+- [ ] Loop animation until user starts stroke; replay between attempts.
+- [ ] Provide immediate validation after each attempt (no buttons).
+- [ ] Aggregate score, mark letter, auto-advance to next letter.
+- [ ] Update data model/state to track per-letter attempt outcomes.

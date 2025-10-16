@@ -10,7 +10,7 @@
 		BD4F01082EA030000052EAF5 /* PracticeTemplateScalingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD4F01072EA030000052EAF5 /* PracticeTemplateScalingTests.swift */; };
 		BD4F01102EA030000052EAF5 /* StartPointGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD4F01112EA030000052EAF5 /* StartPointGateTests.swift */; };
 		BD4F01122EA030000052EAF5 /* PracticeEvaluatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD4F01132EA030000052EAF5 /* PracticeEvaluatorTests.swift */; };
-		BD4F01232EA030000052EAF5 /* AppAssets in Resources */ = {isa = PBXBuildFile; fileRef = BD4F01222EA030000052EAF5 /* AppAssets */; };
+		BD4F01232EA030000052EAF5 /* scribble/AppAssets in Resources */ = {isa = PBXBuildFile; fileRef = BD4F01222EA030000052EAF5 /* scribble/AppAssets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -30,7 +30,7 @@
 		BD4F010C2EA030000052EAF5 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		BD4F01112EA030000052EAF5 /* StartPointGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartPointGateTests.swift; sourceTree = "<group>"; };
 		BD4F01132EA030000052EAF5 /* PracticeEvaluatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PracticeEvaluatorTests.swift; sourceTree = "<group>"; };
-		BD4F01222EA030000052EAF5 /* AppAssets */ = {isa = PBXFileReference; lastKnownFileType = folder; path = scribble/AppAssets; sourceTree = "<group>"; };
+		BD4F01222EA030000052EAF5 /* scribble/AppAssets */ = {isa = PBXFileReference; lastKnownFileType = folder; path = scribble/AppAssets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -64,7 +64,7 @@
 			children = (
 				BD1CDADE2EA00BD60052EAF5 /* scribble */,
 				BD1CDADD2EA00BD60052EAF5 /* Products */,
-				BD4F01222EA030000052EAF5 /* AppAssets */,
+				BD4F01222EA030000052EAF5 /* scribble/AppAssets */,
 				BD4F01092EA030000052EAF5 /* scribbleTests */,
 			);
 			sourceTree = "<group>";
@@ -174,7 +174,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				BD4F01232EA030000052EAF5 /* AppAssets in Resources */,
+				BD4F01232EA030000052EAF5 /* scribble/AppAssets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -340,12 +340,12 @@
 				DEVELOPMENT_TEAM = 54Q9XU57JS;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.3;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.3;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -369,12 +369,12 @@
 				DEVELOPMENT_TEAM = 54Q9XU57JS;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.3;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.3;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -397,7 +397,7 @@
 				DEVELOPMENT_TEAM = 54Q9XU57JS;
 				INFOPLIST_FILE = scribbleTests/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.3;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.mitchellwhite.scribbleTests";
+				PRODUCT_BUNDLE_IDENTIFIER = com.mitchellwhite.scribbleTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -416,7 +416,7 @@
 				DEVELOPMENT_TEAM = 54Q9XU57JS;
 				INFOPLIST_FILE = scribbleTests/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.3;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.mitchellwhite.scribbleTests";
+				PRODUCT_BUNDLE_IDENTIFIER = com.mitchellwhite.scribbleTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";

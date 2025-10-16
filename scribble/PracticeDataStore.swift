@@ -10,6 +10,7 @@ final class PracticeDataStore: ObservableObject {
     @Published private(set) var attemptsByLetter: [String: [LetterAttemptRecord]] = [:]
     @Published private(set) var masteryByLetter: [String: LetterMasteryRecord] = [:]
     @Published private(set) var settings: UserSettings = .default
+    @Published private(set) var latestFlowOutcomes: [String: LetterFlowOutcome] = [:]
     @Published private(set) var contentVersion: String
 
     private let persistenceURL: URL
@@ -104,6 +105,16 @@ final class PracticeDataStore: ObservableObject {
         saveSnapshot()
     }
 
+    func updateStrokeSize(_ size: StrokeSizePreference) {
+        settings.strokeSize = size
+        saveSnapshot()
+    }
+
+    func updateInputPreference(_ preference: InputPreference) {
+        settings.inputPreference = preference
+        saveSnapshot()
+    }
+
     func displayName(for letterId: String) -> String {
         letterId.components(separatedBy: ".").first?.uppercased() ?? letterId
     }
@@ -124,6 +135,17 @@ final class PracticeDataStore: ObservableObject {
         return UnlockEvent(newlyUnlockedLetterId: nextId)
     }
 
+    func recordFlowOutcome(letterId: String,
+                           aggregatedScore: ScoreResult,
+                           stageSummaries: [StageAttemptSummary],
+                           completedAt: Date) {
+        latestFlowOutcomes[letterId] = LetterFlowOutcome(letterId: letterId,
+                                                         aggregatedScore: aggregatedScore,
+                                                         stageSummaries: stageSummaries,
+                                                         completedAt: completedAt)
+        saveSnapshot()
+    }
+
     private func loadSnapshot() {
         guard FileManager.default.fileExists(atPath: persistenceURL.path) else {
             seedDefaults()
@@ -136,6 +158,11 @@ final class PracticeDataStore: ObservableObject {
             masteryByLetter = Dictionary(uniqueKeysWithValues: snapshot.mastery.map { ($0.letterId, $0) })
             settings = snapshot.settings ?? .default
             contentVersion = snapshot.contentVersion ?? assetsVersion
+            if let outcomes = snapshot.flowOutcomes {
+                latestFlowOutcomes = Dictionary(uniqueKeysWithValues: outcomes.map { ($0.letterId, $0) })
+            } else {
+                latestFlowOutcomes = [:]
+            }
             seedMissingDefaults()
             if contentVersion != assetsVersion {
                 contentVersion = assetsVersion
@@ -159,7 +186,8 @@ final class PracticeDataStore: ObservableObject {
         let snapshot = PracticeDataSnapshot(attempts: attempts,
                                             mastery: mastery,
                                             settings: settings,
-                                            contentVersion: contentVersion)
+                                            contentVersion: contentVersion,
+                                            flowOutcomes: orderedFlowOutcomes())
         do {
             let data = try encoder.encode(snapshot)
             try data.write(to: persistenceURL, options: .atomic)
@@ -168,9 +196,15 @@ final class PracticeDataStore: ObservableObject {
         }
     }
 
+    private func orderedFlowOutcomes() -> [LetterFlowOutcome] {
+        let order = Self.focusLetters
+        return order.compactMap { latestFlowOutcomes[$0] }
+    }
+
     private func seedDefaults() {
         attemptsByLetter = [:]
         masteryByLetter = [:]
+        latestFlowOutcomes = [:]
         for (index, letterId) in Self.focusLetters.enumerated() {
             masteryByLetter[letterId] = defaultMasteryRecord(for: letterId, unlocked: index == 0)
         }

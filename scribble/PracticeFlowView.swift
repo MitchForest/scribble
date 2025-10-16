@@ -1,0 +1,753 @@
+import SwiftUI
+import UIKit
+
+private enum StageBadgeState {
+    case pending
+    case current
+    case passed
+    case failed
+
+    var background: Color {
+        switch self {
+        case .passed:
+            return Color.green.opacity(0.85)
+        case .failed:
+            return Color.red.opacity(0.85)
+        case .current:
+            return Color.accentColor.opacity(0.18)
+        case .pending:
+            return Color.clear
+        }
+    }
+
+    var border: Color? {
+        switch self {
+        case .current:
+            return Color.accentColor
+        case .pending:
+            return Color.primary.opacity(0.25)
+        default:
+            return nil
+        }
+    }
+
+    var iconName: String? {
+        switch self {
+        case .passed:
+            return "checkmark"
+        case .failed:
+            return "xmark"
+        default:
+            return nil
+        }
+    }
+
+    var iconColor: Color {
+        switch self {
+        case .passed, .failed:
+            return .white
+        case .current:
+            return .accentColor
+        case .pending:
+            return .clear
+        }
+    }
+}
+
+private enum LetterAggregateStatus {
+    case pending
+    case passed
+    case failed
+
+    var symbolName: String? {
+        switch self {
+        case .passed: return "checkmark.circle.fill"
+        case .failed: return "xmark.circle.fill"
+        case .pending: return nil
+        }
+    }
+
+    var symbolColor: Color {
+        switch self {
+        case .passed: return Color.green
+        case .failed: return Color.red
+        case .pending: return .clear
+        }
+    }
+}
+
+struct PracticeFlowView: View {
+    @EnvironmentObject private var dataStore: PracticeDataStore
+    @Environment(\.dismiss) private var dismiss
+
+    private let letters = PracticeDataStore.focusLetters
+
+    @State private var currentLetterIndex: Int
+    @State private var furthestVisitedIndex: Int
+    @State private var currentStage: PracticeStage = .guidedTrace
+    @State private var currentTemplate: HandwritingTemplate?
+    @State private var stageResults: [PracticeStage: StageOutcome] = [:]
+    @State private var letterStart = Date()
+    @State private var failCounts: [String: Int] = [:]
+    @State private var isSessionComplete = false
+    @State private var letterTemplates: [String: HandwritingTemplate] = [:]
+    @State private var showSettingsSheet = false
+    @State private var hasInitialized = false
+
+    init(startingLetter: String? = nil) {
+        let index = startingLetter.flatMap { PracticeDataStore.focusLetters.firstIndex(of: $0) } ?? 0
+        _currentLetterIndex = State(initialValue: index)
+        _furthestVisitedIndex = State(initialValue: index)
+    }
+
+    private var currentLetterId: String {
+        letters[currentLetterIndex]
+    }
+
+    private var allowFingerInput: Bool {
+        dataStore.settings.inputPreference.allowsFingerInput
+    }
+
+    private var currentStrokeSize: StrokeSizePreference {
+        dataStore.settings.strokeSize
+    }
+
+    private var sessionIdentity: String {
+        let handed = dataStore.settings.isLeftHanded ? "L" : "R"
+        return "\(currentLetterId)|\(currentStrokeSize.rawValue)|\(handed)"
+    }
+
+    var body: some View {
+        ZStack {
+            LinearGradient(
+                gradient: Gradient(colors: [
+                    Color(red: 0.95, green: 0.98, blue: 1.0),
+                    Color(red: 1.0, green: 0.96, blue: 0.98)
+                ]),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+
+            VStack(spacing: 18) {
+                letterStrip
+                StageProgressBar(currentStage: currentStage,
+                                  stageResults: stageResults)
+                    .padding(.top, 4)
+
+                if isSessionComplete {
+                    completionScreen
+                        .padding(.top, 32)
+                } else if let template = currentTemplate {
+                    PracticeSessionView(letterId: currentLetterId,
+                                        template: template,
+                                        stage: $currentStage,
+                                        allowFingerInput: allowFingerInput,
+                                        isLeftHanded: dataStore.settings.isLeftHanded,
+                                        strokeSize: currentStrokeSize,
+                                        hapticsEnabled: dataStore.settings.hapticsEnabled,
+                                        onStageComplete: handleStageOutcome)
+                        .padding(.vertical, 24)
+                        .padding(.horizontal, 16)
+                        .background(RoundedRectangle(cornerRadius: 32).fill(Color.white.opacity(0.92)))
+                        .padding(.horizontal, 20)
+                        .id(sessionIdentity)
+                } else {
+                    ProgressView()
+                        .padding(.top, 40)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(.top, 12)
+            .padding(.bottom, 24)
+        }
+        .navigationTitle(dataStore.displayName(for: currentLetterId))
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Picker("Drawing input", selection: Binding(
+                        get: { dataStore.settings.inputPreference },
+                        set: { dataStore.updateInputPreference($0) }
+                    )) {
+                        ForEach(InputPreference.allCases) { option in
+                            Text(option.title).tag(option)
+                        }
+                    }
+
+                    Button {
+                        toggleHandedness()
+                    } label: {
+                        Label(dataStore.settings.isLeftHanded ? "Use right-handed guides" : "Use left-handed guides",
+                              systemImage: "hand.raised")
+                    }
+
+                    Divider()
+
+                    Button {
+                        showSettingsSheet = true
+                    } label: {
+                        Label("Settings", systemImage: "gearshape")
+                    }
+                } label: {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.title3.weight(.semibold))
+                        .foregroundColor(Color(red: 0.32, green: 0.39, blue: 0.54))
+                }
+            }
+        }
+        .sheet(isPresented: $showSettingsSheet) {
+            SettingsView()
+                .environmentObject(dataStore)
+        }
+        .onAppear {
+            if !hasInitialized {
+                hasInitialized = true
+                ensureTemplatesLoaded()
+                resetForCurrentLetter(startNewAttempt: true)
+            } else {
+                ensureTemplatesLoaded()
+                if currentTemplate == nil {
+                    loadTemplate()
+                }
+            }
+        }
+        .onChange(of: dataStore.settings.strokeSize) { _ in
+            resetForCurrentLetter(startNewAttempt: true)
+        }
+        .onChange(of: dataStore.settings.isLeftHanded) { _ in
+            resetForCurrentLetter(startNewAttempt: true)
+        }
+        .onChange(of: dataStore.settings.inputPreference) { _ in
+            resetForCurrentLetter(startNewAttempt: false)
+        }
+    }
+
+    private var letterStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 18) {
+                ForEach(Array(letters.enumerated()), id: \.offset) { index, letter in
+                    let isCurrent = index == currentLetterIndex && !isSessionComplete
+                    let isLocked = index > furthestVisitedIndex
+                    let aggregate = aggregateStatus(for: letter, index: index)
+                    let stageStates = stageBadgeStates(for: letter, index: index)
+                    LetterProgressCard(
+                        template: letterTemplates[letter],
+                        fallbackLetter: dataStore.displayName(for: letter),
+                        isCurrent: isCurrent,
+                        isLocked: isLocked,
+                        aggregateStatus: aggregate,
+                        stageStates: stageStates,
+                        isLeftHanded: dataStore.settings.isLeftHanded,
+                        action: { jumpToLetter(at: index) }
+                    )
+                }
+            }
+            .padding(.horizontal, 20)
+        }
+    }
+
+    private var completionScreen: some View {
+        VStack(spacing: 24) {
+            Text("Great job!")
+                .font(.system(size: 34, weight: .bold, design: .rounded))
+                .foregroundColor(Color(red: 0.28, green: 0.42, blue: 0.53))
+            Text("You've practiced every letter in this flow.")
+                .font(.title3)
+                .foregroundColor(.secondary)
+            Button {
+                restartSession()
+            } label: {
+                Label("Practice Again", systemImage: "repeat")
+                    .font(.headline)
+                    .padding(.horizontal, 32)
+                    .padding(.vertical, 14)
+                    .background(RoundedRectangle(cornerRadius: 20).fill(Color.accentColor))
+                    .foregroundColor(.white)
+            }
+        }
+        .padding(.horizontal, 28)
+        .padding(.vertical, 40)
+        .background(RoundedRectangle(cornerRadius: 32).fill(Color.white.opacity(0.85)))
+    }
+
+    private func ensureTemplatesLoaded() {
+        guard letterTemplates.count < letters.count else { return }
+        DispatchQueue.global(qos: .userInitiated).async {
+            var loaded: [String: HandwritingTemplate] = [:]
+            for letter in letters {
+                if let template = try? HandwritingTemplateLoader.loadTemplate(for: letter) {
+                    loaded[letter] = template
+                }
+            }
+            DispatchQueue.main.async {
+                letterTemplates.merge(loaded, uniquingKeysWith: { _, new in new })
+            }
+        }
+    }
+
+    private func resetForCurrentLetter(startNewAttempt: Bool) {
+        if startNewAttempt {
+            stageResults.removeAll()
+            currentStage = .guidedTrace
+            letterStart = Date()
+        }
+        loadTemplate()
+    }
+
+    private func loadTemplate() {
+        do {
+            currentTemplate = try HandwritingTemplateLoader.loadTemplate(for: currentLetterId)
+        } catch {
+            currentTemplate = nil
+        }
+    }
+
+    private func handleStageOutcome(_ outcome: StageOutcome) {
+        stageResults[outcome.stage] = outcome
+
+        if dataStore.settings.hapticsEnabled {
+            if outcome.score.total >= 80 {
+                HapticsManager.shared.success()
+            } else {
+                HapticsManager.shared.warning()
+            }
+        }
+
+        switch outcome.stage {
+        case .guidedTrace:
+            currentStage = .dotGuided
+        case .dotGuided:
+            currentStage = .freePractice
+        case .freePractice:
+            finishLetter(with: outcome)
+        }
+    }
+
+    private func finishLetter(with finalOutcome: StageOutcome) {
+        let aggregate = aggregateScore() ?? finalOutcome.score
+        let letterId = currentLetterId
+        let completedAt = Date()
+        let duration = completedAt.timeIntervalSince(letterStart)
+        let pass = aggregate.total >= 80
+
+        _ = dataStore.recordAttempt(letterId: letterId,
+                                    mode: .memory,
+                                    result: aggregate,
+                                    tips: aggregatedTipIds(),
+                                    hintUsed: false,
+                                    drawingData: nil,
+                                    duration: duration,
+                                    startedAt: letterStart,
+                                    completedAt: completedAt)
+
+        let summaries = stageSummaryPayload()
+        dataStore.recordFlowOutcome(letterId: letterId,
+                                    aggregatedScore: aggregate,
+                                    stageSummaries: summaries,
+                                    completedAt: completedAt)
+
+        if pass {
+            failCounts[letterId] = 0
+            advanceToNextLetter()
+        } else {
+            let failures = failCounts[letterId, default: 0] + 1
+            failCounts[letterId] = failures
+            if failures >= 3 {
+                advanceToNextLetter()
+            } else {
+                resetForRetry()
+            }
+        }
+    }
+
+    private func advanceToNextLetter() {
+        stageResults.removeAll()
+        if currentLetterIndex + 1 < letters.count {
+            currentLetterIndex += 1
+            furthestVisitedIndex = max(furthestVisitedIndex, currentLetterIndex)
+            currentStage = .guidedTrace
+            letterStart = Date()
+            loadTemplate()
+        } else {
+            isSessionComplete = true
+        }
+    }
+
+    private func resetForRetry() {
+        stageResults.removeAll()
+        currentStage = .guidedTrace
+        letterStart = Date()
+        loadTemplate()
+    }
+
+    private func restartSession() {
+        isSessionComplete = false
+        failCounts = [:]
+        currentLetterIndex = 0
+        furthestVisitedIndex = 0
+        currentStage = .guidedTrace
+        stageResults.removeAll()
+        letterStart = Date()
+        loadTemplate()
+    }
+
+    private func jumpToLetter(at index: Int) {
+        guard index != currentLetterIndex else { return }
+        guard index <= furthestVisitedIndex else { return }
+        currentLetterIndex = index
+        failCounts[currentLetterId] = 0
+        currentStage = .guidedTrace
+        stageResults.removeAll()
+        letterStart = Date()
+        isSessionComplete = false
+        loadTemplate()
+    }
+
+    private func toggleHandedness() {
+        dataStore.updateLeftHanded(!dataStore.settings.isLeftHanded)
+    }
+
+    private func aggregateScore() -> ScoreResult? {
+        let orderedStages = PracticeStage.allCases
+        let outcomes = orderedStages.compactMap { stageResults[$0] }
+        guard outcomes.count == orderedStages.count else { return nil }
+
+        func average(_ keyPath: KeyPath<ScoreResult, Int>) -> Int {
+            let sum = outcomes.reduce(0) { $0 + $1.score[keyPath: keyPath] }
+            return Int((Double(sum) / Double(outcomes.count)).rounded())
+        }
+
+        return ScoreResult(
+            total: average(\.total),
+            shape: average(\.shape),
+            order: average(\.order),
+            direction: average(\.direction),
+            start: average(\.start)
+        )
+    }
+
+    private func aggregatedTipIds() -> [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+        for stage in PracticeStage.allCases {
+            guard let outcome = stageResults[stage] else { continue }
+            for tip in outcome.tips {
+                if seen.insert(tip.id).inserted {
+                    result.append(tip.id)
+                }
+                if result.count == 2 { return result }
+            }
+        }
+        return result
+    }
+
+    private func stageSummaryPayload() -> [StageAttemptSummary] {
+        PracticeStage.allCases.compactMap { stage in
+            guard let outcome = stageResults[stage] else { return nil }
+            return StageAttemptSummary(stage: stage,
+                                       score: outcome.score,
+                                       durationMs: Int((outcome.duration * 1000).rounded()))
+        }
+    }
+
+    private func stageBadgeStates(for letterId: String, index: Int) -> [StageBadgeState] {
+        if index == currentLetterIndex && !isSessionComplete {
+            return PracticeStage.allCases.map { stage in
+                if let outcome = stageResults[stage] {
+                    return outcome.score.total >= 80 ? .passed : .failed
+                } else if stage == currentStage {
+                    return .current
+                } else if stage.rawValue < currentStage.rawValue {
+                    if let outcome = stageResults[stage] {
+                        return outcome.score.total >= 80 ? .passed : .failed
+                    }
+                    return .pending
+                } else {
+                    return .pending
+                }
+            }
+        }
+
+        if let outcome = dataStore.latestFlowOutcomes[letterId] {
+            var map: [PracticeStage: StageBadgeState] = [:]
+            for summary in outcome.stageSummaries {
+                map[summary.stage] = summary.score.total >= 80 ? .passed : .failed
+            }
+            return PracticeStage.allCases.map { map[$0] ?? .pending }
+        }
+
+        return PracticeStage.allCases.map { _ in .pending }
+    }
+
+    private func aggregateStatus(for letterId: String, index: Int) -> LetterAggregateStatus {
+        if index == currentLetterIndex && !isSessionComplete {
+            return .pending
+        }
+        guard let outcome = dataStore.latestFlowOutcomes[letterId] else {
+            return .pending
+        }
+        return outcome.aggregatedScore.total >= 80 ? .passed : .failed
+    }
+}
+
+private struct StageProgressBar: View {
+    let currentStage: PracticeStage
+    let stageResults: [PracticeStage: StageOutcome]
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ForEach(PracticeStage.allCases, id: \.self) { stage in
+                StageChip(stage: stage, state: chipState(for: stage))
+                if stage != PracticeStage.allCases.last {
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.12))
+                        .frame(width: 16, height: 1.5)
+                }
+            }
+        }
+        .padding(.horizontal, 24)
+    }
+
+    private func chipState(for stage: PracticeStage) -> StageBadgeState {
+        if let outcome = stageResults[stage] {
+            return outcome.score.total >= 80 ? .passed : .failed
+        }
+        if stage == currentStage {
+            return .current
+        }
+        if stage.rawValue < currentStage.rawValue {
+            return .pending
+        }
+        return .pending
+    }
+
+    private struct StageChip: View {
+        let stage: PracticeStage
+        let state: StageBadgeState
+
+        var body: some View {
+            Text(stage.displayName)
+                .font(.caption.weight(state == .current ? .semibold : .regular))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(backgroundColor)
+                .foregroundColor(foregroundColor)
+                .clipShape(Capsule())
+                .overlay(
+                    Capsule()
+                        .stroke(borderColor, lineWidth: state == .current ? 1.5 : 1)
+                )
+        }
+
+        private var backgroundColor: Color {
+            switch state {
+            case .passed:
+                return Color.green.opacity(0.18)
+            case .failed:
+                return Color.red.opacity(0.18)
+            case .current:
+                return Color.accentColor.opacity(0.14)
+            case .pending:
+                return Color.primary.opacity(0.05)
+            }
+        }
+
+        private var foregroundColor: Color {
+            switch state {
+            case .passed:
+                return Color.green.darker(by: 0.3)
+            case .failed:
+                return Color.red.darker(by: 0.2)
+            case .current:
+                return Color.accentColor
+            case .pending:
+                return Color.primary.opacity(0.6)
+            }
+        }
+
+        private var borderColor: Color {
+            switch state {
+            case .passed:
+                return Color.green.opacity(0.6)
+            case .failed:
+                return Color.red.opacity(0.6)
+            case .current:
+                return Color.accentColor.opacity(0.7)
+            case .pending:
+                return Color.primary.opacity(0.15)
+            }
+        }
+    }
+}
+
+private struct LetterProgressCard: View {
+    let template: HandwritingTemplate?
+    let fallbackLetter: String
+    let isCurrent: Bool
+    let isLocked: Bool
+    let aggregateStatus: LetterAggregateStatus
+    let stageStates: [StageBadgeState]
+    let isLeftHanded: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 10) {
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(isLocked ? 0.4 : 0.92))
+                        .frame(width: 70, height: 70)
+                        .overlay(
+                            Circle()
+                                .stroke(isCurrent ? Color.accentColor : Color.clear, lineWidth: 3)
+                        )
+                        .overlay(
+                            Circle()
+                                .stroke(Color.primary.opacity(isCurrent ? 0.0 : 0.08), lineWidth: 1)
+                        )
+
+                    if let template {
+                        LetterGlyphView(template: template,
+                                        isLeftHanded: isLeftHanded,
+                                        strokeColor: Color(red: 0.22, green: 0.34, blue: 0.52),
+                                        lineWidth: 5)
+                            .frame(width: 48, height: 48)
+                    } else {
+                        Text(fallbackLetter.prefix(1))
+                            .font(.system(size: 28, weight: .bold, design: .rounded))
+                            .foregroundColor(Color(red: 0.22, green: 0.34, blue: 0.52))
+                    }
+
+                    if let symbol = aggregateStatus.symbolName {
+                        Image(systemName: symbol)
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(aggregateStatus.symbolColor)
+                            .background(
+                                Circle()
+                                    .fill(Color.white)
+                                    .frame(width: 26, height: 26)
+                            )
+                            .offset(x: 26, y: 26)
+                    }
+
+                    if isLocked {
+                        Circle()
+                            .fill(Color.black.opacity(0.28))
+                            .frame(width: 70, height: 70)
+                            .overlay(
+                                Image(systemName: "lock.fill")
+                                    .font(.system(size: 20, weight: .semibold))
+                                    .foregroundColor(.white)
+                            )
+                    }
+                }
+
+                StageBadgeRow(states: stageStates)
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(isLocked)
+        .opacity(isLocked ? 0.5 : 1.0)
+    }
+}
+
+private struct StageBadgeRow: View {
+    let states: [StageBadgeState]
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(Array(states.enumerated()), id: \.offset) { _, state in
+                StageBadgeView(state: state)
+            }
+        }
+    }
+}
+
+private struct StageBadgeView: View {
+    let state: StageBadgeState
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(state.background)
+
+            if let border = state.border {
+                Circle()
+                    .stroke(border, lineWidth: state == .current ? 1.8 : 1.2)
+            } else if state == .pending {
+                Circle()
+                    .stroke(Color.primary.opacity(0.2), lineWidth: 1)
+            }
+
+            switch state {
+            case .passed, .failed:
+                if let symbol = state.iconName {
+                    Image(systemName: symbol)
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(state.iconColor)
+                }
+            case .current:
+                Circle()
+                    .fill(Color.accentColor)
+                    .frame(width: 6, height: 6)
+            case .pending:
+                EmptyView()
+            }
+        }
+        .frame(width: 18, height: 18)
+    }
+}
+
+private struct LetterGlyphView: View {
+    let template: HandwritingTemplate
+    let isLeftHanded: Bool
+    let strokeColor: Color
+    let lineWidth: CGFloat
+
+    var body: some View {
+        GeometryReader { proxy in
+            let size = proxy.size
+            if let scaled = scaledTemplate(for: size) {
+                ZStack {
+                    ForEach(Array(scaled.strokes.enumerated()), id: \.offset) { _, stroke in
+                        stroke.path
+                            .stroke(strokeColor.opacity(0.9),
+                                    style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round))
+                    }
+                }
+                .frame(width: size.width, height: size.height, alignment: .center)
+            } else {
+                ProgressView()
+            }
+        }
+        .aspectRatio(1, contentMode: .fit)
+    }
+
+    private func scaledTemplate(for size: CGSize) -> ScaledTemplate? {
+        guard size.width > 0, size.height > 0 else { return nil }
+        let ascender = size.height * 0.65
+        let descender = size.height * 0.25
+        return ScaledTemplate(template: template,
+                              availableWidth: size.width,
+                              rowAscender: ascender,
+                              rowDescender: descender,
+                              isLeftHanded: isLeftHanded)
+    }
+}
+
+private extension Color {
+    func darker(by percentage: CGFloat) -> Color {
+        let uiColor = UIColor(self)
+        var r: CGFloat = 0
+        var g: CGFloat = 0
+        var b: CGFloat = 0
+        var a: CGFloat = 0
+        uiColor.getRed(&r, green: &g, blue: &b, alpha: &a)
+        return Color(red: max(r - percentage, 0),
+                     green: max(g - percentage, 0),
+                     blue: max(b - percentage, 0),
+                     opacity: Double(a))
+    }
+}

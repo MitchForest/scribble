@@ -5,6 +5,7 @@ struct PencilCanvasView: UIViewRepresentable {
     @Binding var drawing: PKDrawing
     var onDrawingChanged: (PKDrawing) -> Void
     var allowFingerFallback: Bool = true
+    var lineWidth: CGFloat = 6
 
     func makeUIView(context: Context) -> PKCanvasView {
         let view = PKCanvasView()
@@ -18,13 +19,31 @@ struct PencilCanvasView: UIViewRepresentable {
         } else {
             view.allowsFingerDrawing = allowFingerFallback
         }
-        view.tool = PKInkingTool(.pen, color: .label, width: 6)
+        view.tool = PKInkingTool(.pen, color: .label, width: lineWidth)
         return view
     }
 
     func updateUIView(_ uiView: PKCanvasView, context: Context) {
         if uiView.drawing != drawing {
             uiView.drawing = drawing
+        }
+        if #available(iOS 14.0, *) {
+            let desiredPolicy: PKCanvasViewDrawingPolicy = allowFingerFallback ? .anyInput : .pencilOnly
+            if uiView.drawingPolicy != desiredPolicy {
+                uiView.drawingPolicy = desiredPolicy
+            }
+        } else {
+            if uiView.allowsFingerDrawing != allowFingerFallback {
+                uiView.allowsFingerDrawing = allowFingerFallback
+            }
+        }
+
+        if let inkingTool = uiView.tool as? PKInkingTool {
+            if inkingTool.width != lineWidth {
+                uiView.tool = PKInkingTool(inkingTool.inkType, color: inkingTool.color, width: lineWidth)
+            }
+        } else {
+            uiView.tool = PKInkingTool(.pen, color: .label, width: lineWidth)
         }
     }
 
