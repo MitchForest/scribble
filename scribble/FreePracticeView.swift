@@ -711,14 +711,21 @@ private struct WordGuidesOverlay: View {
                                                        lineJoin: .round,
                                                        dash: guidesEnabled ? style.dash : []))
                     }
-                    if guidesEnabled, index == currentIndex {
-                        if let firstStroke = segment.strokes.first {
-                            StartDot(position: firstStroke.startPoint,
-                                     diameter: metrics.startDotSize)
-                        }
-                        if let lastStroke = segment.strokes.last {
-                            StartDot(position: lastStroke.endPoint,
-                                     diameter: metrics.startDotSize * 0.9)
+                    if guidesEnabled {
+                        if index == currentIndex {
+                            if currentStrokeIndex < segment.strokes.count {
+                                let activeStroke = segment.strokes[currentStrokeIndex]
+                                StartDot(position: activeStroke.startPoint,
+                                         diameter: metrics.startDotSize)
+                                EndDot(position: activeStroke.endPoint,
+                                       diameter: metrics.startDotSize * 0.9)
+                            } else if let finalStroke = segment.strokes.last {
+                                EndDot(position: finalStroke.endPoint,
+                                       diameter: metrics.startDotSize * 0.9)
+                            }
+                        } else if index < currentIndex, let finalStroke = segment.strokes.last {
+                            EndDot(position: finalStroke.endPoint,
+                                   diameter: metrics.startDotSize * 0.7)
                         }
                     }
                 }
@@ -744,6 +751,22 @@ private struct StartDot: View {
     var body: some View {
         Circle()
             .fill(Color(red: 0.35, green: 0.8, blue: 0.46))
+            .overlay(
+                Circle()
+                    .stroke(Color.white, lineWidth: 2)
+            )
+            .frame(width: diameter, height: diameter)
+            .position(position)
+    }
+}
+
+private struct EndDot: View {
+    let position: CGPoint
+    let diameter: CGFloat
+
+    var body: some View {
+        Circle()
+            .fill(Color(red: 0.98, green: 0.86, blue: 0.34))
             .overlay(
                 Circle()
                     .stroke(Color.white, lineWidth: 2)
