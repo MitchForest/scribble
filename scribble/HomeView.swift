@@ -5,6 +5,7 @@ struct HomeView: View {
     @EnvironmentObject private var dataStore: PracticeDataStore
     @State private var path = NavigationPath()
     @State private var activeDialog: QuickDialog?
+    @State private var dialogInitialTab: ProfileQuickActionsDialog.Tab = .today
 
     private let contributionWindow = 84
     private let units = PracticeLessonLibrary.units
@@ -36,7 +37,8 @@ struct HomeView: View {
     private var streakChip: some View {
         Button {
             withAnimation(.easeInOut(duration: 0.25)) {
-                activeDialog = .streak
+                dialogInitialTab = .today
+                activeDialog = .profile
             }
         } label: {
             HStack(alignment: .center, spacing: 12) {
@@ -121,6 +123,7 @@ struct HomeView: View {
                                   progress: progress,
                                   onOpen: {
                                       withAnimation(.easeInOut(duration: 0.25)) {
+                                          dialogInitialTab = .profile
                                           activeDialog = .profile
                                       }
                                   })
@@ -196,15 +199,10 @@ struct HomeView: View {
     }
 
     @ViewBuilder
-    private func dialogView(for dialog: QuickDialog) -> some View {
-        switch dialog {
-        case .profile:
-            ProfileQuickActionsDialog(onClose: { closeDialog() })
-                .environmentObject(dataStore)
-        case .streak:
-            StreakDialog(onClose: { closeDialog() })
-                .environmentObject(dataStore)
-        }
+    private func dialogView(for _: QuickDialog) -> some View {
+        ProfileQuickActionsDialog(initialTab: dialogInitialTab,
+                                  onClose: { closeDialog() })
+            .environmentObject(dataStore)
     }
 
 }

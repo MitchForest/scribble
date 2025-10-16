@@ -120,6 +120,8 @@ struct PracticeSessionView: View {
         profile.warningCooldown
     }
 
+    private static let debugEnabled = true
+
     private var hapticStyle: PracticeDifficultyProfile.HapticStyle {
         profile.hapticStyle
     }
@@ -184,10 +186,14 @@ struct PracticeSessionView: View {
                                      magnetizedStrokes: magnetizedStrokes,
                                      showsGuides: profile.showsGuides,
                                      corridorRadius: corridorRadius,
+                                     startTolerance: startTolerance,
                                      practiceLineWidth: practiceLineWidth,
                                      guideLineWidth: guideLineWidth,
                                      startDotSize: startDotDiameter)
                 .padding(.vertical, verticalInset)
+
+                DebugDrawingOverlay(drawing: drawing)
+                    .padding(.vertical, verticalInset)
 
                 PencilCanvasView(drawing: $drawing,
                                  onDrawingChanged: { updated in
@@ -377,6 +383,12 @@ struct PracticeSessionView: View {
                 magnetizedOffsets.removeValue(forKey: strokeIndex)
                 magnetizedStrokes.remove(strokeIndex)
                 return
+            }
+            if Self.debugEnabled {
+                if let firstPoint = newStroke.path.firstLocation {
+                    print("📝 Stroke \(strokeIndex + 1) start \(firstPoint) template \(templateStroke.startPoint)")
+                }
+                print("🖊️ Drawing bounds after stroke \(strokeIndex + 1): \(drawing.bounds)")
             }
             animationToken += 1
             hasUserDrawn = true
@@ -572,15 +584,12 @@ private struct PracticeOverlayView: View {
     let magnetizedStrokes: Set<Int>
     let showsGuides: Bool
     let corridorRadius: CGFloat
+    let startTolerance: CGFloat
     let practiceLineWidth: CGFloat
     let guideLineWidth: CGFloat
     let startDotSize: CGFloat
 
-    #if DEBUG
-    private static let showCorridorDebug = false
-    #else
-    private static let showCorridorDebug = false
-    #endif
+    private static let showCorridorDebug = true
 
     private var activeStrokeIndex: Int? {
         switch stage {
@@ -605,18 +614,14 @@ private struct PracticeOverlayView: View {
 
     @ViewBuilder
     private var baseLetterShape: some View {
-        if showsGuides && Self.showCorridorDebug {
-            let inactiveColor = Color(red: 0.43, green: 0.59, blue: 0.91).opacity(0.18)
-            let inactiveWidth = max(guideLineWidth * 0.6, 1.0)
-
+        if Self.showCorridorDebug {
+            let inactiveColor = Color(red: 0.2, green: 0.45, blue: 0.85).opacity(0.22)
             ForEach(Array(strokes.enumerated()), id: \.offset) { index, stroke in
-                let isActive = index == activeStrokeIndex
                 stroke.path
-                    .stroke(isActive ? Color.clear : inactiveColor,
-                            style: StrokeStyle(lineWidth: inactiveWidth,
+                    .stroke(inactiveColor,
+                            style: StrokeStyle(lineWidth: max(corridorRadius * 2, practiceLineWidth * 1.2),
                                                lineCap: .round,
-                                               lineJoin: .round,
-                                               dash: stage == .dotGuided ? [6, 8] : []))
+                                               lineJoin: .round))
             }
         }
     }
@@ -648,6 +653,17 @@ private struct PracticeOverlayView: View {
                             style: StrokeStyle(lineWidth: outlineWidth,
                                                lineCap: .round,
                                                lineJoin: .round))
+                if Self.showCorridorDebug {
+                    let startCircleSize = max(startTolerance * 2, startDotSize * 1.2)
+                    Circle()
+                        .strokeBorder(Color(red: 0.18, green: 0.7, blue: 0.42).opacity(0.6), lineWidth: 2)
+                        .background(
+                            Circle()
+                                .fill(Color(red: 0.18, green: 0.7, blue: 0.42).opacity(0.15))
+                        )
+                        .frame(width: startCircleSize, height: startCircleSize)
+                        .position(stroke.startPoint)
+                }
                 if showsGuides {
                     let isMagnetized = magnetizedStrokes.contains(index)
                     StartDot(position: stroke.startPoint,
@@ -666,6 +682,17 @@ private struct PracticeOverlayView: View {
                                                    lineCap: .round,
                                                    lineJoin: .round,
                                                    dash: [5, 6]))
+                    if Self.showCorridorDebug {
+                        let startCircleSize = max(startTolerance * 2, startDotSize * 1.2)
+                        Circle()
+                            .strokeBorder(Color(red: 0.18, green: 0.7, blue: 0.42).opacity(0.6), lineWidth: 2)
+                            .background(
+                                Circle()
+                                    .fill(Color(red: 0.18, green: 0.7, blue: 0.42).opacity(0.15))
+                            )
+                            .frame(width: startCircleSize, height: startCircleSize)
+                            .position(stroke.startPoint)
+                    }
                     let shouldHighlight = index == currentDotIndex || magnetizedStrokes.contains(index)
                     StartDot(position: stroke.startPoint,
                              diameter: startDotSize,
@@ -680,9 +707,52 @@ private struct PracticeOverlayView: View {
                                 style: StrokeStyle(lineWidth: guideLineWidth * 0.75,
                                                    lineCap: .round,
                                                    lineJoin: .round))
+                    if Self.showCorridorDebug {
+                        let startCircleSize = max(startTolerance * 2, startDotSize * 1.2)
+                        Circle()
+                            .strokeBorder(Color(red: 0.18, green: 0.7, blue: 0.42).opacity(0.6), lineWidth: 2)
+                            .background(
+                                Circle()
+                                    .fill(Color(red: 0.18, green: 0.7, blue: 0.42).opacity(0.15))
+                            )
+                            .frame(width: startCircleSize, height: startCircleSize)
+                            .position(stroke.startPoint)
+                    }
                 }
             }
         }
+    }
+}
+
+private struct DebugDrawingOverlay: View {
+    let drawing: PKDrawing
+
+    var body: some View {
+        Canvas { context, size in
+            let strokeColor = Color(red: 0.92, green: 0.27, blue: 0.33).opacity(0.65)
+            for stroke in drawing.strokes {
+                var path = Path()
+                var points: [CGPoint] = []
+                for sample in stroke.path {
+                    points.append(sample.location)
+                }
+                guard let first = points.first else { continue }
+                path.move(to: first)
+                if points.count > 1 {
+                    path.addLines(points.dropFirst())
+                }
+                context.stroke(path,
+                               with: .color(strokeColor),
+                               lineWidth: 3)
+
+                if let start = points.first {
+                    let startRect = CGRect(x: start.x - 6, y: start.y - 6, width: 12, height: 12)
+                    context.fill(Path(ellipseIn: startRect),
+                                 with: .color(Color.red.opacity(0.85)))
+                }
+            }
+        }
+        .allowsHitTesting(false)
     }
 }
 
@@ -875,6 +945,11 @@ struct ScaledTemplate: Equatable {
             }
             let startPoint = stroke.start.map(convertPoint) ?? convertedPoints.first ?? .zero
             let endPoint = stroke.end.map(convertPoint) ?? convertedPoints.last ?? .zero
+#if DEBUG
+            if ProcessInfo.processInfo.environment["SCRIBBLE_TRACE_DEBUG"] == "1" {
+                print("ScaledTemplate \(template.id) stroke \(stroke.id) start=\(startPoint) end=\(endPoint)")
+            }
+#endif
             return ScaledStroke(id: stroke.id,
                                 order: stroke.order,
                                 path: path,

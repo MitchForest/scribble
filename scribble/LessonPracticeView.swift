@@ -3,7 +3,9 @@ import PencilKit
 
 struct LessonPracticeView: View {
     @EnvironmentObject private var dataStore: PracticeDataStore
+    @Environment(\.dismiss) private var dismiss
     @State private var activeDialog: QuickDialog?
+    @State private var dialogInitialTab: ProfileQuickActionsDialog.Tab = .today
     @State private var currentIndex: Int
     @State private var boardKey = UUID()
 
@@ -66,13 +68,15 @@ struct LessonPracticeView: View {
             HStack(spacing: 16) {
                 StreakBadge(streak: streak) {
                     withAnimation(.easeInOut(duration: 0.25)) {
-                        activeDialog = .streak
+                        dialogInitialTab = .today
+                        activeDialog = .profile
                     }
                 }
                 ProfileMenuButton(seed: dataStore.profile.avatarSeed,
                                   progress: dataStore.dailyProgressRatio(),
                                   onOpen: {
                                       withAnimation(.easeInOut(duration: 0.25)) {
+                                          dialogInitialTab = .profile
                                           activeDialog = .profile
                                       }
                                   })
@@ -133,15 +137,13 @@ struct LessonPracticeView: View {
     }
 
     @ViewBuilder
-    private func dialogView(for dialog: QuickDialog) -> some View {
-        switch dialog {
-        case .profile:
-            ProfileQuickActionsDialog(onClose: { closeDialog() })
-                .environmentObject(dataStore)
-        case .streak:
-            StreakDialog(onClose: { closeDialog() })
-                .environmentObject(dataStore)
-        }
+    private func dialogView(for _: QuickDialog) -> some View {
+        ProfileQuickActionsDialog(initialTab: dialogInitialTab,
+                                  onClose: { closeDialog() },
+                                  onExitLesson: {
+                                      dismiss()
+                                  })
+            .environmentObject(dataStore)
     }
 }
 

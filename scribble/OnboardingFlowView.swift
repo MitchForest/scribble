@@ -43,7 +43,6 @@ struct OnboardingFlowView: View {
         }
 
     }
-
     struct Weekday: Identifiable, Hashable {
         let symbol: String
         let fullName: String
@@ -65,6 +64,7 @@ struct OnboardingFlowView: View {
     }
 
     private enum Step: Int, CaseIterable, Identifiable {
+        case intro
         case name
         case age
         case avatar
@@ -76,7 +76,7 @@ struct OnboardingFlowView: View {
 
     let onFinish: () -> Void
 
-    @State private var currentStep: Step = .name
+    @State private var currentStep: Step = .intro
     @State private var name: String = ""
     @State private var age: Int = 8
     @State private var experience: ExperienceLevel?
@@ -89,7 +89,6 @@ struct OnboardingFlowView: View {
 
     private let secondsPerLetter = 5
     private let ageRange = 5...12
-
     private var totalSteps: Int { Step.allCases.count }
     private var stepIndex: Int { Step.allCases.firstIndex(of: currentStep) ?? 0 }
 
@@ -99,6 +98,8 @@ struct OnboardingFlowView: View {
 
     private var canProceed: Bool {
         switch currentStep {
+        case .intro:
+            return true
         case .name:
             return !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .age:
@@ -118,55 +119,25 @@ struct OnboardingFlowView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(colors: [Palette.backgroundTop, Palette.backgroundBottom],
-                           startPoint: .topLeading,
-                           endPoint: .bottomTrailing)
+            Palette.cardBackground
                 .ignoresSafeArea()
 
             GeometryReader { proxy in
-                let step = currentStep
-                let verticalPadding = max(proxy.size.height * verticalPaddingFactor(for: step), 24)
-                let availableHeight = max(proxy.size.height - (verticalPadding * 2), 320)
-                let cardMinHeight = cardMinimumHeight(for: step)
-                let effectiveMinHeight = min(cardMinHeight, availableHeight)
-                let verticalInsets = cardVerticalPadding(for: step)
-                let navigationSpacing = cardNavigationSpacing(for: step)
-                let intrinsicHeight = intrinsicCardHeight(for: step, verticalInsets: verticalInsets)
-                let cappedIntrinsic = min(cardMaximumHeight(for: step, containerHeight: proxy.size.height), intrinsicHeight)
-                let desiredHeight = min(cappedIntrinsic, availableHeight)
-                let candidateHeight = max(effectiveMinHeight, desiredHeight)
-                let cardHeight = adjustedCardHeight(for: step,
-                                                    candidate: candidateHeight,
-                                                    minimum: effectiveMinHeight)
-                let cardWidth = min(cardPreferredWidth(for: step), max(proxy.size.width - 48, 360))
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 36) {
+                        stepView(for: currentStep)
+                            .frame(maxWidth: .infinity, alignment: .center)
 
-                VStack {
-                    Spacer(minLength: verticalPadding)
-
-                    VStack(spacing: navigationSpacing) {
-                        cardContent(for: step,
-                                    cardMinHeight: effectiveMinHeight,
-                                    cardHeight: cardHeight)
-                            .transition(.move(edge: .trailing).combined(with: .opacity))
-
-                        navigationFloor(for: step)
+                        if currentStep != .intro {
+                            navigationControls
+                        }
                     }
-                    .padding(.horizontal, 28)
-                    .padding(.vertical, verticalInsets)
-                    .frame(maxWidth: cardWidth)
-                    .frame(minHeight: effectiveMinHeight,
-                           maxHeight: cardHeight,
-                           alignment: .top)
-                    .background(
-                        RoundedRectangle(cornerRadius: 36, style: .continuous)
-                            .fill(Palette.cardBackground)
-                            .shadow(color: Palette.shadow.opacity(0.18), radius: 28, x: 0, y: 18)
-                    )
-                    .padding(.horizontal, 24)
-
-                    Spacer(minLength: verticalPadding)
+                    .padding(.horizontal, 48)
+                    .padding(.vertical, 56)
+                    .frame(maxWidth: 760, alignment: .center)
+                    .frame(minHeight: proxy.size.height, alignment: .center)
+                    .frame(maxWidth: .infinity)
                 }
-                .frame(width: proxy.size.width, height: proxy.size.height)
             }
         }
         .animation(.interactiveSpring(response: 0.45, dampingFraction: 0.82, blendDuration: 0.2), value: currentStep)
@@ -183,6 +154,8 @@ struct OnboardingFlowView: View {
     @ViewBuilder
     private func stepView(for step: Step) -> some View {
         switch step {
+        case .intro:
+            IntroStepView(onSelectProvider: {})
         case .name:
             NameStepView(name: $name,
                          isFocused: $nameFieldFocused,
@@ -202,26 +175,52 @@ struct OnboardingFlowView: View {
         }
     }
 
-    @ViewBuilder
-    private func navigationFloor(for step: Step) -> some View {
+    private var navigationControls: some View {
         VStack(spacing: 20) {
             HStack(spacing: 16) {
-                KidSecondaryButton(title: "Back", isEnabled: step != .name) {
-                    goToPreviousStep()
-                }
-                KidPrimaryButton(title: nextButtonTitle, isEnabled: canProceed) {
-                    advanceIfPossible()
-                }
-            }
-
-            if step == .name {
-                Button(action: completeOnboarding) {
-                    Text("Skip for now")
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
-                        .foregroundColor(Palette.secondary)
-                        .padding(.top, 4)
+                Button(action: {
+                    if canGoBack {
+                        goToPreviousStep()
+                    }
+                }) {
+                    Text("Back")
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .foregroundColor(canGoBack ? Palette.secondary : Palette.secondary.opacity(0.4))
+                        .frame(width: 120, height: 60)
+                        .background(
+                            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                                .fill(Color.white.opacity(0.9))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                                .stroke(Color.white.opacity(canGoBack ? 0.9 : 0.4), lineWidth: 2)
+                        )
                 }
                 .buttonStyle(.plain)
+                .disabled(!canGoBack)
+                .shadow(color: Color.black.opacity(0.08), radius: 10, x: 0, y: 6)
+
+                Button(action: {
+                    if canProceed {
+                        advanceIfPossible()
+                    }
+                }) {
+                    Text(nextButtonTitle)
+                        .font(.system(size: 24, weight: .heavy, design: .rounded))
+                        .foregroundColor(Palette.accentDark)
+                        .frame(maxWidth: .infinity, minHeight: 68)
+                        .background(
+                            RoundedRectangle(cornerRadius: 30, style: .continuous)
+                                .fill(canProceed ? Palette.accent : Palette.accent.opacity(0.35))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 30, style: .continuous)
+                                .stroke(canProceed ? Palette.accentDark.opacity(0.2) : Color.clear, lineWidth: 2)
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(!canProceed)
+                .shadow(color: Color.black.opacity(canProceed ? 0.12 : 0.04), radius: canProceed ? 18 : 4, x: 0, y: canProceed ? 10 : 2)
             }
 
             ProgressDots(totalSteps: totalSteps, currentStepIndex: stepIndex)
@@ -230,172 +229,62 @@ struct OnboardingFlowView: View {
         }
     }
 
-    private func intrinsicCardHeight(for step: Step, verticalInsets: CGFloat) -> CGFloat {
-        preferredContentHeight(for: step) + navigationReservedHeight(for: step) + (verticalInsets * 2)
-    }
-
-
-
-    private func cardMinimumHeight(for step: Step) -> CGFloat {
-        switch step {
-        case .name: return 260
-        case .age: return 280
-        case .avatar: return 540
-        case .skillLevel: return 420
-        case .goals: return 520
+    private var canGoBack: Bool {
+        if let index = Step.allCases.firstIndex(of: currentStep) {
+            return index > 0
         }
-    }
-
-    private func cardMaximumHeight(for step: Step, containerHeight: CGFloat) -> CGFloat {
-        let factor: CGFloat
-        let cap: CGFloat
-        switch step {
-        case .avatar:
-            factor = 0.9
-            cap = 780
-        case .goals:
-            factor = 0.88
-            cap = 740
-        case .skillLevel:
-            factor = 0.82
-            cap = 700
-        case .age:
-            factor = 0.76
-            cap = 620
-        case .name:
-            factor = 0.72
-            cap = 580
-        }
-        let computed = containerHeight * factor
-        return min(max(computed, cardMinimumHeight(for: step) + 40), cap)
-    }
-
-    private func verticalPaddingFactor(for step: Step) -> CGFloat {
-        switch step {
-        case .avatar, .goals:
-            return 0.05
-        case .skillLevel:
-            return 0.055
-        case .age, .name:
-            return 0.06
-        }
-    }
-
-    private func cardPreferredWidth(for step: Step) -> CGFloat {
-        switch step {
-        case .name: return 520
-        case .age: return 540
-        case .avatar: return 680
-        case .skillLevel: return 640
-        case .goals: return 720
-        }
-    }
-
-    private func adjustedCardHeight(for step: Step,
-                                    candidate: CGFloat,
-                                    minimum: CGFloat) -> CGFloat {
-        switch step {
-        case .name:
-            return min(candidate, minimum + 24)
-        case .age:
-            return min(candidate, minimum + 28)
-        default:
-            return candidate
-        }
-    }
-
-    private func cardVerticalPadding(for step: Step) -> CGFloat {
-        switch step {
-        case .avatar: return 30
-        case .goals: return 28
-        case .skillLevel: return 28
-        case .age: return 18
-        case .name: return 16
-        }
-    }
-
-    private func cardNavigationSpacing(for step: Step) -> CGFloat {
-        switch step {
-        case .name: return 16
-        case .age: return 22
-        case .skillLevel: return 28
-        case .goals: return 28
-        case .avatar: return 32
-        }
-    }
-
-    private func preferredContentHeight(for step: Step) -> CGFloat {
-        switch step {
-        case .name: return 200
-        case .age: return 240
-        case .skillLevel: return 400
-        case .avatar: return 640
-        case .goals: return 600
-        }
-    }
-
-    private func navigationReservedHeight(for step: Step) -> CGFloat {
-        switch step {
-        case .avatar: return 210
-        case .goals: return 220
-        case .skillLevel: return 190
-        case .age, .name: return 120
-        }
-    }
-    
-    @ViewBuilder
-    private func cardContent(for step: Step,
-                             cardMinHeight: CGFloat,
-                             cardHeight: CGFloat) -> some View {
-        VStack(spacing: 0) {
-            stepView(for: step)
-        }
-        .frame(maxWidth: .infinity, alignment: .center)
+        return false
     }
 
     private func prepareInitialState() {
         if avatarOptions.isEmpty {
             regenerateAvatarOptions()
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-            nameFieldFocused = true
+
+        if currentStep == .name {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                nameFieldFocused = true
+            }
         }
     }
 
     private func advanceIfPossible() {
-        guard canProceed else { return }
+        if canProceed {
+            if currentStep == .name {
+                name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
 
-        if currentStep == .name {
-            name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
+            if currentStep == .goals {
+                completeOnboarding()
+            } else if let nextIndex = Step.allCases.firstIndex(of: currentStep)?.advanced(by: 1),
+                      nextIndex < Step.allCases.endIndex {
+                let nextStep = Step.allCases[nextIndex]
+                currentStep = nextStep
+                triggerStepChangeHaptic()
 
-        if currentStep == .goals {
-            completeOnboarding()
-            return
-        }
-
-        if let nextIndex = Step.allCases.firstIndex(of: currentStep)?.advanced(by: 1),
-           nextIndex < Step.allCases.endIndex {
-            currentStep = Step.allCases[nextIndex]
-            triggerStepChangeHaptic()
-        }
-
-        if currentStep != .name {
-            nameFieldFocused = false
+                if nextStep == .name {
+                    DispatchQueue.main.async {
+                        nameFieldFocused = true
+                    }
+                } else {
+                    nameFieldFocused = false
+                }
+            }
         }
     }
 
     private func goToPreviousStep() {
-        guard let currentIndex = Step.allCases.firstIndex(of: currentStep),
-              currentIndex > 0 else { return }
+        if let currentIndex = Step.allCases.firstIndex(of: currentStep), currentIndex > 0 {
+            let previousStep = Step.allCases[currentIndex - 1]
+            currentStep = previousStep
+            triggerStepChangeHaptic()
 
-        let previousStep = Step.allCases[currentIndex - 1]
-        currentStep = previousStep
-        triggerStepChangeHaptic()
-
-        if previousStep == .name {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                nameFieldFocused = true
+            if previousStep == .name {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    nameFieldFocused = true
+                }
+            } else {
+                nameFieldFocused = false
             }
         }
     }
@@ -407,7 +296,7 @@ struct OnboardingFlowView: View {
         }
 
         var seeds: Set<String> = []
-        while seeds.count < 4 {
+        while seeds.count < 3 {
             seeds.insert(OnboardingFlowView.randomSeed())
         }
         avatarOptions = Array(seeds)
@@ -472,6 +361,34 @@ private enum Palette {
 }
 
 // MARK: - Step Views
+
+private struct IntroStepView: View {
+    let onSelectProvider: () -> Void
+
+    var body: some View {
+        VStack(spacing: 44) {
+            VStack(spacing: 12) {
+                Text("Scribble")
+                    .font(.system(size: 56, weight: .black, design: .serif))
+                    .italic()
+                    .foregroundColor(Palette.primary)
+
+                Text("Master the lost art of cursive")
+                    .font(.system(size: 22, weight: .semibold, design: .rounded))
+                    .foregroundColor(Palette.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity)
+
+            VStack(spacing: 18) {
+                SignInButton(provider: .apple, action: onSelectProvider)
+                SignInButton(provider: .google, action: onSelectProvider)
+            }
+            .frame(maxWidth: 420)
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+    }
+}
 
 private struct NameStepView: View {
     @Binding var name: String
@@ -585,18 +502,20 @@ private struct AvatarStepView: View {
                     .multilineTextAlignment(.center)
             }
 
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 18)], spacing: 18) {
-                ForEach(seeds, id: \.self) { seed in
+            HStack(spacing: 18) {
+                ForEach(Array(seeds.prefix(3)), id: \.self) { seed in
                     Button {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                             selectedSeed = seed
                         }
                     } label: {
                         avatarCard(for: seed)
+                            .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.plain)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .center)
 
             Button(action: onShuffle) {
                 HStack(spacing: 10) {
@@ -660,7 +579,7 @@ private struct SkillLevelStepView: View {
                     .multilineTextAlignment(.center)
             }
 
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 18)], spacing: 18) {
+            VStack(spacing: 18) {
                 ForEach(OnboardingFlowView.ExperienceLevel.allCases) { level in
                     KidSelectableOption(title: level.rawValue,
                                         subtitle: level.description,
@@ -713,35 +632,6 @@ private struct GoalsStepView: View {
                     .multilineTextAlignment(.center)
             }
 
-            adaptiveGoalContent()
-        }
-    }
-
-    @ViewBuilder
-    private func adaptiveGoalContent() -> some View {
-        if #available(iOS 16.0, macOS 13.0, *) {
-            ViewThatFits(in: .vertical) {
-                wideGoalLayout()
-                stackedGoalLayout()
-            }
-        } else {
-            stackedGoalLayout()
-        }
-    }
-
-    @ViewBuilder
-    private func wideGoalLayout() -> some View {
-        HStack(alignment: .top, spacing: 32) {
-            dayPicker()
-                .frame(maxWidth: .infinity, alignment: .leading)
-            sliderControls()
-                .frame(maxWidth: 320, alignment: .leading)
-        }
-    }
-
-    @ViewBuilder
-    private func stackedGoalLayout() -> some View {
-        VStack(spacing: 24) {
             dayPicker()
             sliderControls()
         }
@@ -762,6 +652,7 @@ private struct GoalsStepView: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
@@ -784,6 +675,7 @@ private struct GoalsStepView: View {
             }
             .padding(.horizontal, 4)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func toggle(_ day: OnboardingFlowView.Weekday) {
@@ -811,6 +703,73 @@ private struct GoalsStepView: View {
 }
 
 // MARK: - Shared Components
+
+private struct SignInButton: View {
+    enum Provider {
+        case apple
+        case google
+
+        var title: String {
+            switch self {
+            case .apple: return "Sign in with Apple"
+            case .google: return "Sign in with Google"
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .apple: return "apple.logo"
+            case .google: return "globe"
+            }
+        }
+
+        var background: Color {
+            switch self {
+            case .apple: return Color.black
+            case .google: return Color.white
+            }
+        }
+
+        var foreground: Color {
+            switch self {
+            case .apple: return Color.white
+            case .google: return Palette.primary
+            }
+        }
+
+        var border: Color {
+            switch self {
+            case .apple: return Color.black
+            case .google: return Color(red: 0.82, green: 0.86, blue: 0.94)
+            }
+        }
+    }
+
+    let provider: Provider
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: provider.icon)
+                    .font(.system(size: 20, weight: .bold))
+                Text(provider.title)
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
+            }
+            .foregroundColor(provider.foreground)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 18)
+            .background(provider.background)
+            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .stroke(provider.border, lineWidth: provider == .apple ? 0 : 1.5)
+            )
+            .shadow(color: Color.black.opacity(provider == .apple ? 0.16 : 0.08), radius: provider == .apple ? 18 : 12, x: 0, y: provider == .apple ? 10 : 6)
+        }
+        .buttonStyle(.plain)
+    }
+}
 
 private struct KidPrimaryButton: View {
     let title: String
