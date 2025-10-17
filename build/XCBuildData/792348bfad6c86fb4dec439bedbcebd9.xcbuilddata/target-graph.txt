@@ -1,0 +1,4 @@
+Target dependency graph (2 targets)
+Target 'scribbleTests' in project 'scribble'
+➜ Explicit dependency on target 'scribble' in project 'scribble'
+Target 'scribble' in project 'scribble' (no dependencies)

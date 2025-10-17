@@ -9,6 +9,8 @@ struct HomeView: View {
 
     private let contributionWindow = 84
     private let units = PracticeLessonLibrary.units
+    private let lockedUnitPlaceholderCount = 5
+
 
     private var today: ContributionDay {
         dataStore.todayContribution()
@@ -77,7 +79,7 @@ struct HomeView: View {
                         unitSelection
                     }
                     .padding(.horizontal, 28)
-                    .padding(.vertical, 32)
+                    .padding(.vertical, 24)
                 }
             }
             .navigationDestination(for: HomeRoute.self) { route in
@@ -147,7 +149,7 @@ struct HomeView: View {
     }
 
     private var unitSelection: some View {
-        LazyVGrid(columns: unitColumns, spacing: 28) {
+        LazyVGrid(columns: unitColumns, spacing: 20) {
             ForEach(unitSummaries, id: \.unit.id) { summary in
                 UnitCard(unit: summary.unit,
                          status: summary.status) {
@@ -155,11 +157,15 @@ struct HomeView: View {
                     path.append(HomeRoute.practiceLesson(nextLesson.id))
                 }
             }
+
+            ForEach(0..<lockedUnitPlaceholderCount, id: \.self) { index in
+                LockedUnitCard(position: unitSummaries.count + index + 1)
+            }
         }
     }
 
     private var unitColumns: [GridItem] {
-        [GridItem(.adaptive(minimum: 340, maximum: 420), spacing: 28, alignment: .top)]
+        [GridItem(.adaptive(minimum: 260, maximum: 320), spacing: 20, alignment: .top)]
     }
 
     private var unitSummaries: [(unit: PracticeUnit, status: UnitStatus)] {
@@ -262,13 +268,13 @@ private struct UnitCard: View {
 
     var body: some View {
         Button(action: onSelect) {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 18) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(unit.title)
-                        .font(.system(size: 28, weight: .heavy, design: .rounded))
+                        .font(.system(size: 26, weight: .heavy, design: .rounded))
                         .foregroundColor(Color(red: 0.24, green: 0.33, blue: 0.57))
                     Text(unit.description)
-                        .font(.system(size: 17, weight: .semibold, design: .rounded))
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
                         .foregroundColor(Color(red: 0.45, green: 0.54,  blue: 0.72))
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -289,16 +295,16 @@ private struct UnitCard: View {
                         .foregroundColor(Color(red: 0.48, green: 0.57, blue: 0.74))
                 }
 
-                Text(nextDescription)
-                    .font(.system(size: 20, weight: .bold, design: .rounded))
-                    .foregroundColor(Color(red: 0.26, green: 0.36, blue: 0.6))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .padding(28)
-            .frame(maxWidth: .infinity, minHeight: 230, alignment: .topLeading)
-            .background(
-                RoundedRectangle(cornerRadius: 34, style: .continuous)
-                    .fill(Color.white.opacity(0.94))
+            Text(nextDescription)
+                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .foregroundColor(Color(red: 0.26, green: 0.36, blue: 0.6))
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, minHeight: 210, alignment: .center)
+        .background(
+            RoundedRectangle(cornerRadius: 34, style: .continuous)
+                .fill(Color.white.opacity(0.94))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 34, style: .continuous)
@@ -329,6 +335,32 @@ private struct UnitInfoChip: View {
             Capsule(style: .continuous)
                 .fill(accent.opacity(0.24))
         )
+    }
+}
+
+private struct LockedUnitCard: View {
+    let position: Int
+
+    var body: some View {
+        VStack {
+            Spacer(minLength: 0)
+            Image(systemName: "lock.fill")
+                .font(.system(size: 48, weight: .bold))
+                .foregroundColor(Color(red: 0.7, green: 0.73, blue: 0.82))
+            Spacer(minLength: 0)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, minHeight: 210, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: 34, style: .continuous)
+                .fill(Color.white.opacity(0.55))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 34, style: .continuous)
+                .stroke(Color.white.opacity(0.25), lineWidth: 1.2)
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Locked unit \(position). Coming soon.")
     }
 }
 

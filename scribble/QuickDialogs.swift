@@ -102,10 +102,10 @@ struct ProfileQuickActionsDialog: View {
         .onAppear {
             syncFromStore()
         }
-        .onChange(of: dataStore.profile.goal) { _ in
+        .onChange(of: dataStore.profile.goal) { _, _ in
             syncGoalState()
         }
-        .onChange(of: dataStore.settings.difficulty) { newValue in
+        .onChange(of: dataStore.settings.difficulty) { _, newValue in
             selectedDifficulty = newValue
         }
     }
@@ -194,14 +194,28 @@ struct ProfileQuickActionsDialog: View {
     }
 
     private var todayTab: some View {
-        VStack(spacing: 24) {
-            AvatarProgressButton(seed: dataStore.profile.avatarSeed,
-                                 progress: dataStore.dailyProgressRatio())
-                .frame(width: 140, height: 140)
+        VStack(spacing: 18) {
+            infoCard(title: "Today's progress", padding: 20) {
+                VStack(spacing: 18) {
+                    AvatarProgressButton(seed: dataStore.profile.avatarSeed,
+                                         progress: dataStore.dailyProgressRatio())
+                        .frame(width: 120, height: 120)
 
-            Text(todayProgressLine)
-                .font(.system(size: 20, weight: .heavy, design: .rounded))
-                .foregroundColor(ScribbleColors.primary)
+                    VStack(spacing: 6) {
+                        Text(todayProgressLine)
+                            .font(.system(size: 19, weight: .heavy, design: .rounded))
+                            .foregroundColor(ScribbleColors.primary)
+                            .multilineTextAlignment(.center)
+
+                        Text("Keep scribbling to close the ring.")
+                            .font(.system(size: 14, weight: .medium, design: .rounded))
+                            .foregroundColor(ScribbleColors.secondary.opacity(0.75))
+                            .multilineTextAlignment(.center)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+            }
+            .frame(maxWidth: .infinity, alignment: .center)
 
             if onExitLesson != nil {
                 Button {
@@ -223,20 +237,25 @@ struct ProfileQuickActionsDialog: View {
     }
 
     private var streakTab: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text("Current streak: \(streak) \(streak == 1 ? "day" : "days")")
-                .font(.system(size: 18, weight: .heavy, design: .rounded))
-                .foregroundColor(ScribbleColors.primary)
+        infoCard(title: "Streak calendar", padding: 20) {
+            VStack(spacing: 18) {
+                Text("Current streak: \(streak) \(streak == 1 ? "day" : "days")")
+                    .font(.system(size: 18, weight: .heavy, design: .rounded))
+                    .foregroundColor(ScribbleColors.primary)
 
-            HStack {
-                Spacer(minLength: 0)
+                Text("Light up your active days each week to keep the flame going.")
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundColor(ScribbleColors.secondary.opacity(0.75))
+                    .multilineTextAlignment(.center)
+
                 CompactStreakGrid(weeks: streakWeekColumns,
                                   goalDailySeconds: goal.dailySeconds,
                                   activeWeekdays: goal.activeWeekdayIndices,
                                   dayLabels: dayLabels)
-                Spacer(minLength: 0)
             }
+            .frame(maxWidth: .infinity, alignment: .center)
         }
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 
     private var profileTab: some View {
@@ -278,7 +297,7 @@ struct ProfileQuickActionsDialog: View {
                                 .stroke(ScribbleColors.inputBorder.opacity(0.5), lineWidth: 2)
                         )
                         .focused($nameFieldFocused)
-                        .onChange(of: nameDraft) { newValue in
+                        .onChange(of: nameDraft) { _, newValue in
                             commitDisplayName(newValue)
                         }
                 }

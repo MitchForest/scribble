@@ -1,0 +1,16 @@
+{
+  "source": "/Users/mitchellwhite/Code/scribble/scribble/DiceBearAvatar.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "😊",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 35
+        }
+      }
+    ]
+  },
+  "version": 1
+}

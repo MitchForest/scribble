@@ -1,0 +1,40 @@
+{
+  "source": "/Users/mitchellwhite/Code/scribble/scribble/ScribbleComponents.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Selected",
+        "location": {
+          "startingColumn": 42,
+          "startingLine": 234
+        }
+      },
+      {
+        "comment": "",
+        "key": "Not selected",
+        "location": {
+          "startingColumn": 55,
+          "startingLine": 234
+        }
+      },
+      {
+        "comment": "",
+        "key": "On",
+        "location": {
+          "startingColumn": 50,
+          "startingLine": 280
+        }
+      },
+      {
+        "comment": "",
+        "key": "Off",
+        "location": {
+          "startingColumn": 57,
+          "startingLine": 280
+        }
+      }
+    ]
+  },
+  "version": 1
+}

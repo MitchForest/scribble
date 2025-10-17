@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-200 -1496.0 1600 2378.0" width="800" height="600" stroke-linecap="round" stroke-linejoin="round">
+  <style>
+    .guide { stroke-width: 4; opacity: 0.35; fill: none; }
+    .guide.mid { stroke-dasharray: 24 14; opacity: 0.5; }
+    .stroke { fill: none; stroke-width: 24; stroke-linecap: round; stroke-linejoin: round; }
+  </style>
+  <line class="guide" x1="-200" y1="0" x2="1400" y2="0" stroke="#2F3A56"/>
+  <line class="guide mid" x1="-200" y1="-614.0" x2="1400" y2="-614.0" stroke="#457B9D"/>
+  <line class="guide" x1="-200" y1="-1296.0" x2="1400" y2="-1296.0" stroke="#2F3A56"/>
+  <line class="guide" x1="-200" y1="682.0" x2="1400" y2="682.0" stroke="#ADB5BD" stroke-width="2"/>
+  <path class="stroke" d="M 35.387,-1.000 L 336.387,-615.000" stroke="#FF6B6B" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1">
+    <animate attributeName="stroke-dashoffset" values="1;0" dur="1.20s" begin="0.00s" fill="freeze"/>
+  </path>
+  <path class="stroke" d="M 335.000,-614.000 C 335.000,-612.586 336.000,683.000 335.000,682.000" stroke="#4ECDC4" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1">
+    <animate attributeName="stroke-dashoffset" values="1;0" dur="1.20s" begin="1.35s" fill="freeze"/>
+  </path>
+  <path class="stroke" d="M 335.000,681.000 C 336.000,682.000 335.000,-307.000 335.000,-307.000 C 335.000,-414.000 480.000,-614.000 622.000,-614.000 C 698.000,-614.000 756.000,-540.000 756.000,-408.000 C 756.000,-204.000 630.074,-0.000 388.000,-0.000 L 335.000,-0.000" stroke="#45B7D1" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1">
+    <animate attributeName="stroke-dashoffset" values="1;0" dur="1.20s" begin="2.70s" fill="freeze"/>
+  </path>
+  <path class="stroke" d="M 335.000,-0.000 Q 340.000,-0.000 345.469,-0.151 Q 351.000,-0.000 363.500,-0.455 Q 376.000,-1.000 381.031,-0.691 Q 386.000,-1.000 389.000,-0.640 Q 475.000,-2.000 586.204,-28.740 Q 701.000,-57.000 777.000,-110.000 Q 797.000,-124.000 813.995,-137.000" stroke="#96CEB4" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1">
+    <animate attributeName="stroke-dashoffset" values="1;0" dur="1.20s" begin="4.05s" fill="freeze"/>
+  </path>
+</svg>

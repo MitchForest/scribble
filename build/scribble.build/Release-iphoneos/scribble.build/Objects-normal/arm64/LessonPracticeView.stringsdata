@@ -1,0 +1,24 @@
+{
+  "source": "/Users/mitchellwhite/Code/scribble/scribble/LessonPracticeView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Scribble",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 62
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 161
+        }
+      }
+    ]
+  },
+  "version": 1
+}

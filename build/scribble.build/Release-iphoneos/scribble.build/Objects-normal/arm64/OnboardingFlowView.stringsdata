@@ -1,0 +1,192 @@
+{
+  "source": "/Users/mitchellwhite/Code/scribble/scribble/OnboardingFlowView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Back",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 182
+        }
+      },
+      {
+        "comment": "",
+        "key": "Scribble",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 373
+        }
+      },
+      {
+        "comment": "",
+        "key": "Master the lost art of cursive",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 378
+        }
+      },
+      {
+        "comment": "",
+        "key": "What's your name?",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 403
+        }
+      },
+      {
+        "comment": "",
+        "key": "We'll use this to cheer you on.",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 408
+        }
+      },
+      {
+        "comment": "",
+        "key": "Type your name here",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 416
+        }
+      },
+      {
+        "comment": "",
+        "key": "",
+        "location": {
+          "startingColumn": 27,
+          "startingLine": 423
+        }
+      },
+      {
+        "comment": "",
+        "key": "Name",
+        "location": {
+          "startingColumn": 41,
+          "startingLine": 442
+        }
+      },
+      {
+        "comment": "",
+        "key": "How old are you?",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 457
+        }
+      },
+      {
+        "comment": "",
+        "key": "Select your age, then tap Next.",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 461
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 473
+        }
+      },
+      {
+        "comment": "",
+        "key": "Choose your avatar",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 496
+        }
+      },
+      {
+        "comment": "",
+        "key": "Tap the picture you like. You can shuffle for more.",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 501
+        }
+      },
+      {
+        "comment": "",
+        "key": "Shuffle buddies",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 525
+        }
+      },
+      {
+        "comment": "",
+        "key": "This one!",
+        "location": {
+          "startingColumn": 41,
+          "startingLine": 550
+        }
+      },
+      {
+        "comment": "",
+        "key": "Pick me",
+        "location": {
+          "startingColumn": 55,
+          "startingLine": 550
+        }
+      },
+      {
+        "comment": "",
+        "key": "What's your skill level?",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 573
+        }
+      },
+      {
+        "comment": "",
+        "key": "We’ll tailor lessons and difficulty for you.",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 578
+        }
+      },
+      {
+        "comment": "",
+        "key": "Set your goals",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 626
+        }
+      },
+      {
+        "comment": "",
+        "key": "Choose your practice days and daily letters.",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 631
+        }
+      },
+      {
+        "comment": "",
+        "key": "Practice days",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 645
+        }
+      },
+      {
+        "comment": "",
+        "key": "Letters each practice day",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 663
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld letters ≈ %@",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 674
+        }
+      }
+    ]
+  },
+  "version": 1
+}

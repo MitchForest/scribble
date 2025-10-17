@@ -1,0 +1,16 @@
+{
+  "source": "/Users/mitchellwhite/Code/scribble/scribble/PracticeRowGuides.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Handwriting guides with solid blue top and baseline and a dashed red midline",
+        "location": {
+          "startingColumn": 29,
+          "startingLine": 53
+        }
+      }
+    ]
+  },
+  "version": 1
+}

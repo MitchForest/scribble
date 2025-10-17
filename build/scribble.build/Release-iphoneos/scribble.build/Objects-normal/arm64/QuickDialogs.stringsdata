@@ -1,0 +1,128 @@
+{
+  "source": "/Users/mitchellwhite/Code/scribble/scribble/QuickDialogs.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Close dialog",
+        "location": {
+          "startingColumn": 33,
+          "startingLine": 134
+        }
+      },
+      {
+        "comment": "",
+        "key": "Your Scribble hub",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 116
+        }
+      },
+      {
+        "comment": "",
+        "key": "Keep scribbling to close the ring.",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 210
+        }
+      },
+      {
+        "comment": "",
+        "key": "Exit Lesson",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 224
+        }
+      },
+      {
+        "comment": "",
+        "key": "Current streak: %lld %@",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 242
+        }
+      },
+      {
+        "comment": "",
+        "key": "Light up your active days each week to keep the flame going.",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 246
+        }
+      },
+      {
+        "comment": "",
+        "key": "Shuffle avatar",
+        "location": {
+          "startingColumn": 27,
+          "startingLine": 270
+        }
+      },
+      {
+        "comment": "",
+        "key": "Display name",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 282
+        }
+      },
+      {
+        "comment": "",
+        "key": "Explorer",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 286
+        }
+      },
+      {
+        "comment": "",
+        "key": "Daily letters",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 312
+        }
+      },
+      {
+        "comment": "",
+        "key": "Practice days",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 325
+        }
+      },
+      {
+        "comment": "",
+        "key": "Choose the challenge that fits your handwriting journey.",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 346
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld letters",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 405
+        }
+      },
+      {
+        "comment": "",
+        "key": "",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 712
+        }
+      },
+      {
+        "comment": "",
+        "key": "W%lld",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 715
+        }
+      }
+    ]
+  },
+  "version": 1
+}

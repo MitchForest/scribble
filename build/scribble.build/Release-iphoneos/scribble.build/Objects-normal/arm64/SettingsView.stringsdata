@@ -1,0 +1,64 @@
+{
+  "source": "/Users/mitchellwhite/Code/scribble/scribble/SettingsView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Settings",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 107
+        }
+      },
+      {
+        "comment": "",
+        "key": "Mirrors practice overlays and repositions buttons for left-handed writers.",
+        "location": {
+          "startingColumn": 52,
+          "startingLine": 75
+        }
+      },
+      {
+        "comment": "",
+        "key": "Left-handed mode",
+        "location": {
+          "startingColumn": 42,
+          "startingLine": 70
+        }
+      },
+      {
+        "comment": "",
+        "key": "Turn off if vibrations are distracting.",
+        "location": {
+          "startingColumn": 48,
+          "startingLine": 86
+        }
+      },
+      {
+        "comment": "",
+        "key": "Play gentle haptics",
+        "location": {
+          "startingColumn": 38,
+          "startingLine": 81
+        }
+      },
+      {
+        "comment": "",
+        "key": "Version",
+        "location": {
+          "startingColumn": 38,
+          "startingLine": 91
+        }
+      },
+      {
+        "comment": "",
+        "key": "Done",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 110
+        }
+      }
+    ]
+  },
+  "version": 1
+}

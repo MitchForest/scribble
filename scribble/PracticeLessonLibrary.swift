@@ -93,9 +93,12 @@ enum PracticeLessonLibrary {
     private static func makeLetterLessons(style: PracticeLesson.CharacterStyle,
                                           startingIndex: Int = 1) -> [PracticeLesson] {
         let letters: [Character] = Array("abcdefghijklmnopqrstuvwx")
+        let repetitionsPerLine = style == .lower ? 5 : 4
         return letters.enumerated().map { offset, character in
             let display = styledString(for: character, style: style)
-            let practiceText = repeatedSequence(of: display, count: 8)
+            let practiceText = repeatedSequence(of: display,
+                                                count: repetitionsPerLine,
+                                                separator: "   ")
             let subtitle = style == .lower ? "Lowercase drill" : "Uppercase drill"
             let lessonIndex = startingIndex + offset
             let title = "Lesson \(lessonIndex)"
@@ -124,7 +127,7 @@ enum PracticeLessonLibrary {
         return chunks.enumerated().map { offset, chunk in
             let formatted = chunk.map { styledString(for: $0, style: style) }
             let sequence = formatted.joined(separator: " ")
-            let practiceText = repeatedSequence(of: sequence, count: 2, separator: "   ")
+            let practiceText = sequence
             let first = formatted.first ?? ""
             let last = formatted.last ?? ""
             let subtitle = style == .lower ? "Lowercase run" : "Uppercase run"

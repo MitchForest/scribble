@@ -192,6 +192,7 @@ private struct LessonPracticeBoard: View {
     @State private var animationToken = 0
     @State private var feedback: FeedbackMessage?
     @State private var completionGuard = false
+    @State private var resetToken = 0
 
     init(lesson: PracticeLesson,
          settings: UserSettings,
@@ -232,16 +233,14 @@ private struct LessonPracticeBoard: View {
                                               return
                                           }
                                           feedback = nil
-                                          if index == viewModel.currentLetterIndex {
-                                              animationToken &+= 1
-                                          } else {
-                                              viewModel.replay(at: index)
-                                              animationToken &+= 1
-                                          }
+                                          viewModel.replay(at: index)
+                                          animationToken &+= 1
+                                          resetToken &+= 1
                                       })
 
                     LetterPracticeCanvas(layout: layout,
                                          metrics: metrics,
+                                         resetTrigger: resetToken,
                                          currentIndex: viewModel.currentLetterIndex,
                                          guidesEnabled: guidesEnabled,
                                          difficulty: settings.difficulty,
@@ -266,8 +265,9 @@ private struct LessonPracticeBoard: View {
                                          onRetryFeedback: { showRetryFeedback() })
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .onChange(of: viewModel.targetText) { _ in
+                .onChange(of: viewModel.targetText) { _, _ in
                     feedback = nil
+                    resetToken &+= 1
                 }
 
                 if let bubble = feedback,
@@ -285,10 +285,11 @@ private struct LessonPracticeBoard: View {
             viewModel.resumeIfNeeded()
             onProgressChanged(viewModel.completedLetterCount, viewModel.totalPractiseableLetters)
         }
-        .onChange(of: viewModel.currentLetterIndex) { _ in
+        .onChange(of: viewModel.currentLetterIndex) { _, _ in
             animationToken &+= 1
+            resetToken &+= 1
         }
-        .onChange(of: viewModel.targetText) { _ in
+        .onChange(of: viewModel.targetText) { _, _ in
             animationToken &+= 1
             completionGuard = false
         }
@@ -473,6 +474,7 @@ private struct ReferenceLineView: View {
 private struct LetterPracticeCanvas: View {
     let layout: WordLayout
     let metrics: PracticeCanvasMetrics
+    let resetTrigger: Int
     let currentIndex: Int
     let guidesEnabled: Bool
     let difficulty: PracticeDifficulty
@@ -491,9 +493,16 @@ private struct LetterPracticeCanvas: View {
     @State private var lastWarningTime: Date?
     @State private var previousCompletedCount = 0
     @State private var didCompleteCurrentLetter = false
+    @State private var slideOffset: CGFloat = 0
 
     private var profile: PracticeDifficultyProfile {
         difficulty.profile
+    }
+
+    private var validationConfiguration: RasterStrokeValidator.Configuration {
+        profile.validationConfiguration(rowHeight: metrics.rowMetrics.ascender,
+                                        visualStartRadius: metrics.startDotSize / 2,
+                                        userInkWidth: metrics.userInkWidth)
     }
 
     private var warningCooldown: TimeInterval {
@@ -512,20 +521,12 @@ private struct LetterPracticeCanvas: View {
         layout.segments[safe: currentIndex]
     }
 
-    private var validationTuning: StrokeValidationTuning {
-        let start = metrics.startTolerance(for: difficulty)
-        let corridor = metrics.corridorRadius(for: difficulty)
-        let soft = metrics.corridorSoftLimit(for: difficulty)
-        return profile.validationTuning(startRadius: start,
-                                        corridorRadius: corridor,
-                                        softLimit: soft)
-    }
-
     var body: some View {
         let canvasWidth = layout.width + layout.leadingInset * 2
         return ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: 28, style: .continuous)
                 .stroke(Color.white.opacity(0.35), lineWidth: 1.2)
+                .frame(width: canvasWidth, height: canvasHeight)
 
             PracticeRowGuides(width: layout.width,
                               ascender: layout.ascender,
@@ -540,16 +541,29 @@ private struct LetterPracticeCanvas: View {
                               currentStrokeIndex: currentStrokeIndex,
                               guidesEnabled: guidesEnabled)
 
+            if let segment = currentSegment {
+                let checkpoints = checkpoints(for: segment)
+                let arrowIndex = currentStrokeIndex >= segment.strokes.count ? checkpoints.count : currentStrokeIndex
+                LetterCheckpointsOverlay(checkpoints: checkpoints,
+                                         currentIndex: arrowIndex,
+                                         arrowDiameter: validationConfiguration.startRadius * 2,
+                                         targetDiameter: validationConfiguration.startRadius * 2)
+                    .allowsHitTesting(false)
+                    .frame(width: canvasWidth, height: canvasHeight)
+            }
+
             StaticDrawingView(drawing: frozenDrawing)
                 .allowsHitTesting(false)
+                .frame(width: canvasWidth, height: canvasHeight)
 
             PencilCanvasView(drawing: $drawing,
                              onDrawingChanged: { updated in
                                  processDrawingChange(updated)
                              },
                              allowFingerFallback: allowFingerInput,
-                             lineWidth: metrics.userInkWidth)
+                             lineWidth: validationConfiguration.studentLineWidth)
                 .padding(.horizontal, 0)
+                .frame(width: canvasWidth, height: canvasHeight)
 
             if let warningMessage {
                 Text(warningMessage)
@@ -563,20 +577,27 @@ private struct LetterPracticeCanvas: View {
                     .transition(.opacity)
             }
         }
-        .frame(height: canvasHeight)
+        .frame(width: canvasWidth, height: canvasHeight, alignment: .topLeading)
+        .offset(x: slideOffset)
         .padding(.vertical, 6)
-        .onChange(of: layout.cacheKey) {
+        .onChange(of: layout.cacheKey) { _, _ in
             DispatchQueue.main.async {
                 resetCanvas()
             }
         }
-        .onChange(of: currentIndex) {
+        .onChange(of: currentIndex) { _, _ in
             DispatchQueue.main.async {
                 drawing = PKDrawing()
                 currentStrokeIndex = 0
                 previousCompletedCount = 0
                 didCompleteCurrentLetter = false
                 warningMessage = nil
+                slideOffset = 0
+            }
+        }
+        .onChange(of: resetTrigger) { _, _ in
+            DispatchQueue.main.async {
+                restartCurrentAttempt(clearCompleted: true)
             }
         }
     }
@@ -589,6 +610,45 @@ private struct LetterPracticeCanvas: View {
         lastWarningTime = nil
         previousCompletedCount = 0
         didCompleteCurrentLetter = false
+        slideOffset = 0
+    }
+
+    private func restartCurrentAttempt(clearCompleted: Bool = false) {
+        drawing = PKDrawing()
+        if clearCompleted {
+            frozenDrawing = PKDrawing()
+        }
+        warningMessage = nil
+        currentStrokeIndex = 0
+        lastWarningTime = nil
+        previousCompletedCount = 0
+        didCompleteCurrentLetter = false
+        slideOffset = 0
+    }
+
+    private func checkpoints(for segment: WordLayout.Segment) -> [LetterCheckpointsOverlay.Checkpoint] {
+        guard !segment.strokes.isEmpty else { return [] }
+        var result: [LetterCheckpointsOverlay.Checkpoint] = []
+        for stroke in segment.strokes {
+            let angle = arrowAngle(for: stroke)
+            result.append(.init(position: stroke.startPoint, angle: angle))
+        }
+        if let finalPoint = segment.strokes.last?.endPoint {
+            result.append(.init(position: finalPoint, angle: nil))
+        }
+        return result
+    }
+
+    private func arrowAngle(for stroke: WordLayout.ScaledStroke) -> Angle? {
+        guard let first = stroke.points.first else { return nil }
+        for point in stroke.points.dropFirst() {
+            let dx = point.x - first.x
+            let dy = point.y - first.y
+            if abs(dx) > 0.01 || abs(dy) > 0.01 {
+                return Angle(radians: Double(atan2(dy, dx)))
+            }
+        }
+        return nil
     }
 
     private func processDrawingChange(_ updated: PKDrawing) {
@@ -598,6 +658,7 @@ private struct LetterPracticeCanvas: View {
             previousCompletedCount = 0
             didCompleteCurrentLetter = false
             warningMessage = nil
+            slideOffset = 0
             return
         }
 
@@ -612,32 +673,59 @@ private struct LetterPracticeCanvas: View {
         }
 
         let template = makeTraceTemplate(for: segment)
-        let analysis = StrokeTraceAnalyzer.analyze(drawing: updated,
-                                                   template: template,
-                                                   tuning: validationTuning)
+        let analysis = RasterStrokeValidator.evaluate(drawing: updated,
+                                                      template: template,
+                                                      configuration: validationConfiguration)
 
-        if analysis.completedCount > previousCompletedCount {
-            for index in previousCompletedCount..<analysis.completedCount {
+        #if DEBUG
+        for (index, report) in analysis.reports.enumerated() {
+            print(
+                """
+                validator report \(index) [\(report.id)] \
+                started:\(report.started) end:\(report.reachedEnd) \
+                coverage:\(String(format: "%.3f", report.coverage)) \
+                failure:\(String(describing: report.failure))
+                """
+            )
+        }
+        if let failure = analysis.failure {
+            print("validator failure: \(failure)")
+        }
+        #endif
+
+        if let failure = analysis.failure {
+            restartCurrentAttempt()
+            presentFailure(failure)
+            return
+        }
+
+        warningMessage = nil
+
+        let completedCount = analysis.completedCount
+
+        if completedCount > previousCompletedCount {
+            for index in previousCompletedCount..<completedCount {
                 onStrokeValidated(index, segment.strokes.count)
             }
-            previousCompletedCount = analysis.completedCount
+            previousCompletedCount = completedCount
             if hapticsEnabled {
                 HapticsManager.shared.success()
             }
             onSuccessFeedback()
-        } else if analysis.completedCount < previousCompletedCount {
-            previousCompletedCount = analysis.completedCount
+        } else if completedCount < previousCompletedCount {
+            previousCompletedCount = completedCount
         }
 
-        currentStrokeIndex = min(analysis.nextIndex, segment.strokes.count)
-        handleWarnings(for: analysis)
+        currentStrokeIndex = min(analysis.activeStrokeIndex, segment.strokes.count)
 
-        if analysis.isComplete && !didCompleteCurrentLetter {
+        let isComplete = analysis.failure == nil && completedCount == analysis.totalCount
+
+        if isComplete && !didCompleteCurrentLetter {
             didCompleteCurrentLetter = true
-            DispatchQueue.main.async {
+            animateLineAdvance {
                 completeLetter()
             }
-        } else if !analysis.isComplete {
+        } else if !isComplete {
             didCompleteCurrentLetter = false
         }
     }
@@ -648,48 +736,22 @@ private struct LetterPracticeCanvas: View {
             .map { stroke in
                 StrokeTraceTemplate.Stroke(id: stroke.id,
                                            order: stroke.order,
-                                           samples: stroke.sampledPoints,
+                                           points: stroke.points,
                                            startPoint: stroke.startPoint,
                                            endPoint: stroke.endPoint)
             }
         return StrokeTraceTemplate(strokes: strokes)
     }
 
-    private func handleWarnings(for analysis: StrokeTraceAnalyzer.Result) {
-        if let failure = analysis.failure {
-            presentFailure(failure)
-            return
-        }
-
-        if let warning = analysis.activeWarning {
-            presentSoftWarning(warning.kind)
-        } else {
-            warningMessage = nil
-        }
-    }
-
-    private func presentFailure(_ failure: StrokeTraceAnalyzer.FailureReason) {
+    private func presentFailure(_ failure: RasterStrokeValidator.FailureReason) {
         let message: String
         switch failure {
         case .missedStart:
             message = "Start at the green dot"
-        case .leftCorridor:
-            message = "Stay inside the blue path"
+        case .missedEnd:
+            message = "Trace all the way to the yellow dot"
         case .insufficientCoverage:
-            message = "Trace more of the stroke"
-        case .missedWaypoint:
-            message = "Follow the stroke path"
-        }
-        showWarning(message)
-    }
-
-    private func presentSoftWarning(_ warning: StrokeTraceAnalyzer.WarningKind) {
-        let message: String
-        switch warning {
-        case .deviation:
-            message = "Stay inside the blue path"
-        case .slowProgress:
-            message = "Trace forward along the stroke"
+            message = "Cover more of the path"
         }
         showWarning(message)
     }
@@ -737,6 +799,20 @@ private struct LetterPracticeCanvas: View {
         lastWarningTime = nil
         onSuccessFeedback()
         onLetterComplete()
+    }
+
+    private func animateLineAdvance(completion: @escaping () -> Void) {
+        let travelDistance = layout.width + layout.leadingInset * 2 + 60
+        withAnimation(.easeInOut(duration: 0.35)) {
+            slideOffset = -travelDistance
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.36) {
+            slideOffset = travelDistance
+            completion()
+            withAnimation(.easeInOut(duration: 0.35)) {
+                slideOffset = 0
+            }
+        }
     }
 }
 
@@ -818,13 +894,6 @@ private struct WordGuidesOverlay: View {
                                                lineCap: .round,
                                                lineJoin: .round))
             }
-
-            if strokeIndex == activeStroke {
-                StartDot(position: stroke.startPoint,
-                         diameter: metrics.startDotSize * 0.9)
-                EndDot(position: stroke.endPoint,
-                       diameter: metrics.startDotSize * 0.8)
-            }
         }
     }
 
@@ -851,32 +920,91 @@ private struct WordGuidesOverlay: View {
     }
 }
 
-private struct StartDot: View {
+private struct LetterCheckpointsOverlay: View {
+    struct Checkpoint {
+        let position: CGPoint
+        let angle: Angle?
+    }
+
+    let checkpoints: [Checkpoint]
+    let currentIndex: Int
+    let arrowDiameter: CGFloat
+    let targetDiameter: CGFloat
+
+    private var arrowColor: Color { Color(red: 0.35, green: 0.8, blue: 0.46) }
+    private var targetColor: Color { Color(red: 0.98, green: 0.86, blue: 0.34) }
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            if showArrow, let arrowCheckpoint = checkpoints[safe: currentIndex] {
+                ArrowCheckpoint(position: arrowCheckpoint.position,
+                                diameter: arrowDiameter,
+                                angle: arrowCheckpoint.angle ?? .zero,
+                                color: arrowColor)
+            }
+
+            if let nextIndex = nextCheckpointIndex,
+               let targetCheckpoint = checkpoints[safe: nextIndex] {
+                TargetCheckpoint(position: targetCheckpoint.position,
+                                 diameter: targetDiameter,
+                                 color: targetColor)
+            }
+        }
+    }
+
+    private var showArrow: Bool {
+        currentIndex < checkpoints.count
+    }
+
+    private var nextCheckpointIndex: Int? {
+        let next = currentIndex + 1
+        guard next < checkpoints.count else { return nil }
+        return next
+    }
+}
+
+private struct ArrowCheckpoint: View {
     let position: CGPoint
     let diameter: CGFloat
+    let angle: Angle
+    let color: Color
 
     var body: some View {
         Circle()
-            .fill(Color(red: 0.35, green: 0.8, blue: 0.46))
+            .fill(color)
             .overlay(
                 Circle()
                     .stroke(Color.white, lineWidth: 2)
+            )
+            .overlay(
+                Image(systemName: "arrowtriangle.forward.fill")
+                    .resizable()
+                    .scaledToFit()
+                    .padding(diameter * 0.28)
+                    .foregroundColor(.white)
+                    .rotationEffect(angle)
             )
             .frame(width: diameter, height: diameter)
             .position(position)
     }
 }
 
-private struct EndDot: View {
+private struct TargetCheckpoint: View {
     let position: CGPoint
     let diameter: CGFloat
+    let color: Color
 
     var body: some View {
         Circle()
-            .fill(Color(red: 0.98, green: 0.86, blue: 0.34))
+            .fill(color)
             .overlay(
                 Circle()
                     .stroke(Color.white, lineWidth: 2)
+            )
+            .overlay(
+                Circle()
+                    .fill(Color.white)
+                    .frame(width: diameter * 0.35, height: diameter * 0.35)
             )
             .frame(width: diameter, height: diameter)
             .position(position)
@@ -908,13 +1036,13 @@ private struct WordLayout {
          availableWidth: CGFloat,
          metrics: PracticeCanvasMetrics,
          isLeftHanded: Bool) {
+        let availableWidth = max(availableWidth, 160)
         let rowAscender = metrics.rowMetrics.ascender
         let rowDescender = metrics.rowMetrics.descender
         let totalHeight = rowAscender + rowDescender
 
-        let baseSpacing: CGFloat = rowAscender * 0.35
-        let baseSpaceWidth: CGFloat = rowAscender * 0.8
-        let horizontalPadding: CGFloat = 40
+        let baseSpacing: CGFloat = rowAscender * 0.26
+        let baseSpaceWidth: CGFloat = rowAscender * 0.52
 
         struct Descriptor {
             let item: LetterTimelineItem
@@ -979,17 +1107,25 @@ private struct WordLayout {
             }
         }
 
-        let totalRawWidth = rawWidths.reduce(0, +) + baseSpacing * max(0, CGFloat(items.count - 1))
-        let usableWidth = max(availableWidth - horizontalPadding, 80)
-        let compression = totalRawWidth > usableWidth ? usableWidth / totalRawWidth : 1
-        let contentWidth = totalRawWidth * compression
-        let leadingInsetValue = max((availableWidth - contentWidth) / 2, 16)
+        let spacingCount = max(0, CGFloat(descriptors.count - 1))
+        let glyphWidthSum = rawWidths.reduce(0, +)
+        let gapCount = max(descriptors.count - 1, 0)
+        let minimalInnerWidth = glyphWidthSum + baseSpacing * spacingCount
+        let canvasWidth = max(availableWidth, minimalInnerWidth)
+        let leadingInsetValue: CGFloat = 0
+        let innerWidth = canvasWidth
+        var spacingBetweenSegments = baseSpacing
+
+        if gapCount > 0 && minimalInnerWidth < innerWidth {
+            let extra = innerWidth - minimalInnerWidth
+            spacingBetweenSegments = baseSpacing + extra / CGFloat(gapCount)
+        }
 
         var segments: [Segment] = []
         var cursor = leadingInsetValue
 
         for (index, descriptor) in descriptors.enumerated() {
-            let segmentWidth = descriptor.width * compression
+            let segmentWidth = descriptor.width
             if descriptor.strokes.isEmpty {
                 let frame = CGRect(x: cursor,
                                    y: 0,
@@ -1003,7 +1139,7 @@ private struct WordLayout {
                                         strokeBounds: nil))
             } else {
                 var scaledStrokes: [ScaledStroke] = []
-                let horizontalScale = descriptor.baseScale * compression
+                let horizontalScale = descriptor.baseScale
                 let minX = descriptor.minX
                 let segmentFrame = CGRect(x: cursor,
                                           y: 0,
@@ -1067,7 +1203,10 @@ private struct WordLayout {
                                         lineWidth: descriptor.lineWidth,
                                         strokeBounds: unionBounds))
             }
-            cursor += segmentWidth + baseSpacing * compression
+            cursor += segmentWidth
+            if index < descriptors.count - 1 {
+                cursor += spacingBetweenSegments
+            }
         }
 
         self.segments = segments
@@ -1080,7 +1219,7 @@ private struct WordLayout {
         self.scaledXHeight = resolvedXHeight
         self.ascender = rowAscender
         self.descender = rowDescender
-        self.width = availableWidth
+        self.width = innerWidth
         self.height = totalHeight
         self.leadingInset = leadingInsetValue
         self.cacheKey = "\(items.map { $0.character })|\(availableWidth)|\(rowAscender)|\(isLeftHanded)"
@@ -1113,7 +1252,6 @@ private struct WordLayout {
         let points: [CGPoint]
         let startPoint: CGPoint
         let endPoint: CGPoint
-        let sampledPoints: [CGPoint]
 
         init(id: String,
              order: Int,
@@ -1127,46 +1265,6 @@ private struct WordLayout {
             self.points = points
             self.startPoint = startPoint
             self.endPoint = endPoint
-            self.sampledPoints = ScaledStroke.sample(points: points, stride: 6)
-        }
-
-        private static func sample(points: [CGPoint], stride: Int) -> [CGPoint] {
-            guard stride > 0 else { return points }
-            var result: [CGPoint] = []
-            var index = 0
-            for point in points {
-                if index % stride == 0 {
-                    result.append(point)
-                }
-                index += 1
-            }
-            if let last = points.last, result.last != last {
-                result.append(last)
-            }
-            return result
-        }
-
-        func closestDistance(to point: CGPoint, sampleCount: Int) -> CGFloat {
-            guard !sampledPoints.isEmpty else { return CGFloat.greatestFiniteMagnitude }
-            let samples = max(sampleCount, 12)
-            let stride = max(sampledPoints.count / samples, 1)
-            var nearest = CGFloat.greatestFiniteMagnitude
-            for (index, strokePoint) in sampledPoints.enumerated() where index % stride == 0 {
-                let distance = hypot(point.x - strokePoint.x, point.y - strokePoint.y)
-                if distance < nearest {
-                    nearest = distance
-                }
-            }
-            return nearest
-        }
-
-        func corridorPath(expand radius: CGFloat) -> Path {
-            var path = Path()
-            guard !points.isEmpty else { return path }
-            path.addLines(points)
-            return path.strokedPath(.init(lineWidth: radius * 2,
-                                          lineCap: .round,
-                                          lineJoin: .round))
         }
     }
 }
@@ -1261,9 +1359,9 @@ private struct PracticeCanvasMetrics {
 
     var startDotSize: CGFloat {
         switch strokeSize {
-        case .large: return 26
-        case .standard: return 20
-        case .compact: return 16
+        case .large: return 32
+        case .standard: return 24
+        case .compact: return 18
         }
     }
 
@@ -1275,21 +1373,4 @@ private struct PracticeCanvasMetrics {
         }
     }
 
-    func startTolerance(for difficulty: PracticeDifficulty) -> CGFloat {
-        let base: CGFloat = 32 * (rowMetrics.ascender / StrokeSizePreference.standard.metrics.ascender)
-        return base * difficulty.profile.startToleranceMultiplier
-    }
-
-    func deviationTolerance(for difficulty: PracticeDifficulty) -> CGFloat {
-        let base: CGFloat = 40 * (rowMetrics.ascender / StrokeSizePreference.standard.metrics.ascender)
-        return base * difficulty.profile.deviationToleranceMultiplier
-    }
-
-    func corridorRadius(for difficulty: PracticeDifficulty) -> CGFloat {
-        deviationTolerance(for: difficulty) * difficulty.profile.corridorWidthMultiplier
-    }
-
-    func corridorSoftLimit(for difficulty: PracticeDifficulty) -> CGFloat {
-        corridorRadius(for: difficulty) + difficulty.profile.corridorSoftness
-    }
 }

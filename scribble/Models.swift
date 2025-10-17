@@ -119,30 +119,56 @@ extension PracticeDifficulty {
 }
 
 extension PracticeDifficultyProfile {
-    func validationTuning(startRadius: CGFloat,
-                          corridorRadius: CGFloat,
-                          softLimit: CGFloat) -> StrokeValidationTuning {
-        let waypointFractions: [Double]
-        let minimumTravelRatio: Double
+    func validationConfiguration(rowHeight: CGFloat,
+                                  visualStartRadius: CGFloat,
+                                  userInkWidth: CGFloat) -> RasterStrokeValidator.Configuration {
+        let defaults = RasterValidationDefaults.configuration(for: self)
+        let tubeRadius = max(rowHeight * defaults.tubeFactor, RasterValidationDefaults.minimumTubeRadius)
+        let tubeLineWidth = tubeRadius * 2
+        let studentLineWidth = tubeLineWidth * defaults.studentWidthMultiplier
+        let startRadius = max(visualStartRadius,
+                              tubeRadius * RasterValidationDefaults.startZoneRadiusMultiplier)
 
-        switch completionCoverageThreshold {
-        case ..<0.7:
-            waypointFractions = [0.33, 0.66]
-            minimumTravelRatio = max(completionCoverageThreshold, 0.6)
-        case ..<0.8:
-            waypointFractions = [0.25, 0.5, 0.75]
-            minimumTravelRatio = max(completionCoverageThreshold, 0.7)
-        default:
-            waypointFractions = [0.2, 0.4, 0.6, 0.8]
-            minimumTravelRatio = max(completionCoverageThreshold, 0.8)
+        return RasterStrokeValidator.Configuration(rasterScale: RasterValidationDefaults.rasterScale,
+                                                   tubeLineWidth: tubeLineWidth,
+                                                   studentLineWidth: studentLineWidth,
+                                                   startRadius: startRadius,
+                                                   coverageThreshold: defaults.coverageThreshold)
+    }
+}
+
+private enum RasterValidationDefaults {
+    struct DifficultyConfiguration {
+        let tubeFactor: CGFloat
+        let studentWidthMultiplier: CGFloat
+        let coverageThreshold: Double
+    }
+
+    static let rasterScale: CGFloat = 2
+    static let minimumTubeRadius: CGFloat = 3
+    static let startZoneRadiusMultiplier: CGFloat = 1.6
+
+    private static let beginner = DifficultyConfiguration(tubeFactor: 0.12,
+                                                          studentWidthMultiplier: 1.4,
+                                                          coverageThreshold: 0.9)
+
+    private static let intermediate = DifficultyConfiguration(tubeFactor: 0.085,
+                                                              studentWidthMultiplier: 1.2,
+                                                              coverageThreshold: 0.94)
+
+    private static let expert = DifficultyConfiguration(tubeFactor: 0.05,
+                                                        studentWidthMultiplier: 1.1,
+                                                        coverageThreshold: 0.97)
+
+    static func configuration(for profile: PracticeDifficultyProfile) -> DifficultyConfiguration {
+        switch profile.strokeSize {
+        case .large:
+            return beginner
+        case .standard:
+            return intermediate
+        case .compact:
+            return expert
         }
-
-        return StrokeValidationTuning(startRadius: startRadius,
-                                      corridorRadius: corridorRadius,
-                                      softLimit: softLimit,
-                                      minimumInsideRatio: completionCoverageThreshold,
-                                      minimumTravelRatio: minimumTravelRatio,
-                                      waypointFractions: waypointFractions)
     }
 }
 

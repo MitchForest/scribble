@@ -1,0 +1,38 @@
+# Style configuration for Learning Curve font
+# All measurements in font units (typically 1000 units per em)
+
+font:
+  name: "Learning Curve"
+  variant: "Regular"
+  script: "cursive"
+  
+metrics:
+  unitsPerEm: 1978
+  baseline: 0
+  xHeight: 614
+  ascender: 1296
+  descender: -682
+  capHeight: 1296
+  
+slant:
+  targetDegrees: 12  # Cursive slant angle
+  tolerance: 5       # Degrees of acceptable deviation
+  
+stroke:
+  defaultWidth: 3    # Display stroke width in points
+  startMarkerRadius: 8
+  endMarkerRadius: 5
+  
+tolerances:
+  maxPathDeviationPx: 8     # Maximum deviation from template path
+  maxStartErrorPx: 12       # Maximum error for starting point
+  maxDirectionFlipPct: 0.1  # Maximum % of path with wrong direction
+  joinGapPx: 10             # Maximum gap between joined letters
+  slantToleranceDeg: 5      # Slant angle tolerance
+  
+display:
+  guidelineOpacity: 0.3
+  baselineColor: "#FF0000"
+  xHeightColor: "#0000FF"
+  ascenderColor: "#808080"
+  descenderColor: "#808080"

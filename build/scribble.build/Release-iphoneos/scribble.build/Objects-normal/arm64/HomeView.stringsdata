@@ -1,0 +1,64 @@
+{
+  "source": "/Users/mitchellwhite/Code/scribble/scribble/HomeView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Current streak %lld %@. Tap to view streak history.",
+        "location": {
+          "startingColumn": 29,
+          "startingLine": 69
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 52
+        }
+      },
+      {
+        "comment": "",
+        "key": "Lesson unavailable",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 92
+        }
+      },
+      {
+        "comment": "",
+        "key": "Scribble",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 113
+        }
+      },
+      {
+        "comment": "",
+        "key": "Locked unit %lld. Coming soon.",
+        "location": {
+          "startingColumn": 29,
+          "startingLine": 363
+        }
+      },
+      {
+        "comment": "",
+        "key": "Open profile options",
+        "location": {
+          "startingColumn": 37,
+          "startingLine": 391
+        }
+      },
+      {
+        "comment": "",
+        "key": "😊",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 457
+        }
+      }
+    ]
+  },
+  "version": 1
+}

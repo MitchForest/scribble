@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-200 -1496.0 1600 2378.0" width="800" height="600" stroke-linecap="round" stroke-linejoin="round">
+  <style>
+    .guide { stroke-width: 4; opacity: 0.35; fill: none; }
+    .guide.mid { stroke-dasharray: 24 14; opacity: 0.5; }
+    .stroke { fill: none; stroke-width: 24; stroke-linecap: round; stroke-linejoin: round; }
+  </style>
+  <line class="guide" x1="-200" y1="0" x2="1400" y2="0" stroke="#2F3A56"/>
+  <line class="guide mid" x1="-200" y1="-614.0" x2="1400" y2="-614.0" stroke="#457B9D"/>
+  <line class="guide" x1="-200" y1="-1296.0" x2="1400" y2="-1296.0" stroke="#2F3A56"/>
+  <line class="guide" x1="-200" y1="682.0" x2="1400" y2="682.0" stroke="#ADB5BD" stroke-width="2"/>
+  <path class="stroke" d="M 35.387,-1.000 L 561.387,-1071.000 C 577.377,-1103.495 585.387,-1143.816 585.387,-1180.000 C 585.387,-1237.031 552.387,-1296.000 475.387,-1296.000 C 364.340,-1296.000 333.000,-1194.000 333.000,-1071.000 L 333.000,-0.000" stroke="#FF6B6B" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1">
+    <animate attributeName="stroke-dashoffset" values="1;0" dur="1.20s" begin="0.00s" fill="freeze"/>
+  </path>
+  <path class="stroke" d="M 333.000,-0.000 L 333.000,-307.000 C 333.000,-414.000 478.000,-614.000 620.000,-614.000 C 696.000,-614.000 754.000,-559.000 754.000,-477.000 L 754.000,-103.000 C 754.000,-49.000 771.000,-0.000 829.004,-0.000 C 871.004,-0.000 892.004,-39.000 907.004,-69.000 C 907.000,-69.000 940.381,-137.000 940.381,-137.000" stroke="#4ECDC4" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1">
+    <animate attributeName="stroke-dashoffset" values="1;0" dur="1.20s" begin="1.35s" fill="freeze"/>
+  </path>
+</svg>
