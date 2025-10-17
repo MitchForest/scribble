@@ -1,5 +1,6 @@
 import SwiftUI
 import PencilKit
+import Foundation
 
 struct LessonPracticeView: View {
     @EnvironmentObject private var dataStore: PracticeDataStore
@@ -325,10 +326,10 @@ private struct LessonPracticeBoard: View {
     let onLessonComplete: () -> Void
 
     @StateObject private var viewModel: FreePracticeViewModel
-    @State private var animationToken = 0
     @State private var feedback: FeedbackMessage?
     @State private var completionGuard = false
     @State private var resetToken = 0
+    @State private var previewToken = 0
 
 
     init(lesson: PracticeLesson,
@@ -354,36 +355,23 @@ private struct LessonPracticeBoard: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let metrics = PracticeCanvasMetrics(strokeSize: settings.difficulty.profile.strokeSize)
-            let layout = WordLayout(items: viewModel.timeline,
-                                    availableWidth: proxy.size.width,
-                                    metrics: metrics,
-                                    isLeftHanded: settings.isLeftHanded)
+            let safeInsets = proxy.safeAreaInsets
+            let outerPadding: CGFloat = max(24 - min(safeInsets.leading, safeInsets.trailing), 18)
+            let availableWidth = max(proxy.size.width - safeInsets.leading - safeInsets.trailing - outerPadding * 2, 220)
+            let baseMetrics = PracticeCanvasMetrics(strokeSize: settings.difficulty.profile.strokeSize)
+            let sizing = PracticeCanvasSizing.resolve(items: viewModel.timeline,
+                                                      availableWidth: availableWidth,
+                                                      baseMetrics: baseMetrics,
+                                                      isLeftHanded: settings.isLeftHanded)
+            let layout = sizing.layout
+            let metrics = sizing.metrics
 
             ZStack(alignment: .top) {
-                VStack(alignment: .center, spacing: max(layout.height * 0.09, 8)) {
-                    ReferenceLineView(layout: layout,
-                                      currentIndex: viewModel.currentLetterIndex,
-                                      animationToken: animationToken,
-                                      letterStates: viewModel.letterStates,
-                                      onTap: { index, segment in
-                                          guard segment.isPractiseable else { return }
-                                          if index > viewModel.currentLetterIndex {
-                                              return
-                                          }
-                                          feedback = nil
-                                          viewModel.replay(at: index)
-                                          animationToken &+= 1
-                                          resetToken &+= 1
-                                      })
-                    .frame(height: layout.height + layout.verticalInset * 2)
-                    .frame(maxWidth: .infinity)
-                    .padding(.horizontal, layout.leadingInset)
-                    .layoutPriority(1)
-
+                ZStack(alignment: .topLeading) {
                     LetterPracticeCanvas(layout: layout,
                                          metrics: metrics,
                                          resetTrigger: resetToken,
+                                         previewTrigger: previewToken,
                                          currentIndex: viewModel.currentLetterIndex,
                                          guidesEnabled: guidesEnabled,
                                          difficulty: settings.difficulty,
@@ -401,43 +389,47 @@ private struct LessonPracticeBoard: View {
                                              onProgressChanged(viewModel.completedLetterCount,
                                                                viewModel.totalPractiseableLetters)
                                              viewModel.advanceToNextPractiseableLetter()
+                                             DispatchQueue.main.async {
+                                                 startPreview(resetCanvas: true, replayLetter: false)
+                                             }
                                              if lessonDone {
                                                  triggerLessonCompletion()
                                              }
                                          },
                                          onSuccessFeedback: { showSuccessFeedback() },
                                          onRetryFeedback: { showRetryFeedback() })
+
+                    if let bubble = feedback,
+                       let segment = layout.segments[safe: viewModel.currentLetterIndex] {
+                        let baselineY = layout.ascender
+                        let bubbleYUpperBound = layout.ascender + layout.descender - 32
+                        let bubbleY = min(max(baselineY - 28, 32), bubbleYUpperBound)
+                        FeedbackBubbleView(message: bubble)
+                            .position(x: segment.frame.midX + layout.leadingInset, y: bubbleY)
+                    }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .padding(.horizontal, outerPadding)
                 .padding(.top, 14)
                 .padding(.bottom, 20)
-                .onChange(of: viewModel.targetText) { _, _ in
-                    feedback = nil
-                    resetToken &+= 1
-                }
-
-                if let bubble = feedback,
-                   let segment = layout.segments[safe: viewModel.currentLetterIndex] {
-                    let baselineY = layout.ascender
-                    let bubbleYUpperBound = layout.ascender + layout.descender - 32
-                    let bubbleY = min(max(baselineY - 28, 32), bubbleYUpperBound)
-                    FeedbackBubbleView(message: bubble)
-                        .position(x: segment.frame.midX, y: bubbleY)
-                }
+                .frame(maxWidth: .infinity, alignment: .top)
             }
         }
         .frame(minHeight: 280)
         .onAppear {
             viewModel.resumeIfNeeded()
             onProgressChanged(viewModel.completedLetterCount, viewModel.totalPractiseableLetters)
+            DispatchQueue.main.async {
+                startPreview(resetCanvas: true, replayLetter: false)
+            }
         }
         .onChange(of: viewModel.currentLetterIndex) { _, _ in
-            animationToken &+= 1
-            resetToken &+= 1
+            feedback = nil
+            startPreview(resetCanvas: true, replayLetter: false)
         }
         .onChange(of: viewModel.targetText) { _, _ in
-            animationToken &+= 1
             completionGuard = false
+            viewModel.resetProgress()
+            startPreview(resetCanvas: true, replayLetter: true)
         }
         .onChange(of: clearTrigger) { _, _ in
             handleClear()
@@ -456,9 +448,27 @@ private struct LessonPracticeBoard: View {
         feedback = nil
         completionGuard = false
         viewModel.resetProgress()
-        animationToken &+= 1
-        resetToken &+= 1
+        startPreview(resetCanvas: true, replayLetter: true)
         onProgressChanged(0, viewModel.totalPractiseableLetters)
+    }
+
+    private func startPreview(resetCanvas: Bool, replayLetter: Bool) {
+        guard let currentSegment = viewModel.timeline[safe: viewModel.currentLetterIndex],
+              currentSegment.isPractiseable else {
+            if resetCanvas {
+                resetToken &+= 1
+            }
+            previewToken &+= 1
+            return
+        }
+        if replayLetter {
+            viewModel.replay(at: viewModel.currentLetterIndex)
+        }
+        if resetCanvas {
+            resetToken &+= 1
+        }
+        feedback = nil
+        previewToken &+= 1
     }
 
     private func showSuccessFeedback() {
@@ -513,119 +523,13 @@ private struct PracticeBackground: View {
     }
 }
 
-// MARK: - Reference Line
-
-private struct ReferenceLineView: View {
-    let layout: WordLayout
-    let currentIndex: Int
-    let animationToken: Int
-    let letterStates: [LetterState]
-    let onTap: (Int, WordLayout.Segment) -> Void
-
-    @State private var strokeProgress: [CGFloat] = []
-
-    var body: some View {
-        ZStack(alignment: .topLeading) {
-            ForEach(Array(layout.segments.enumerated()), id: \.1.id) { index, segment in
-                if !segment.strokes.isEmpty {
-                    let color = referenceColor(for: index)
-                    ForEach(Array(segment.strokes.enumerated()), id: \.element.id) { strokeIndex, stroke in
-                        stroke.path
-                            .trim(from: 0, to: trimAmount(for: index, strokeIndex: strokeIndex))
-                            .stroke(color,
-                                    style: StrokeStyle(lineWidth: segment.lineWidth,
-                                                       lineCap: .round,
-                                                       lineJoin: .round))
-                    }
-                }
-
-                Rectangle()
-                    .fill(Color.clear)
-                    .frame(width: max(segment.frame.width, 32),
-                           height: layout.ascender + layout.descender + 24)
-                    .position(x: segment.frame.midX,
-                              y: (layout.ascender + layout.descender + 24) / 2)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        onTap(index, segment)
-                    }
-            }
-        }
-        .padding(.vertical, layout.verticalInset)
-        .padding(.horizontal, max(layout.leadingInset, (layout.segments.first?.lineWidth ?? 0) * 0.6))
-        .onAppear { animateCurrentLetter() }
-        .onChange(of: animationToken) {
-            animateCurrentLetter()
-        }
-        .drawingGroup()
-    }
-
-    private func referenceColor(for index: Int) -> Color {
-        if index < letterStates.count {
-            if letterStates[index].isComplete {
-                return Color(red: 0.36, green: 0.66, blue: 0.46)
-            }
-            if letterStates[index].hadWarning {
-                return Color(red: 0.91, green: 0.45, blue: 0.41)
-            }
-        }
-        if index == currentIndex {
-            return Color(red: 0.32, green: 0.52, blue: 0.98)
-        }
-        return Color(red: 0.75, green: 0.82, blue: 0.94)
-    }
-
-    private func trimAmount(for segmentIndex: Int, strokeIndex: Int) -> CGFloat {
-        if segmentIndex == currentIndex,
-           strokeIndex < strokeProgress.count {
-            return strokeProgress[strokeIndex]
-        }
-        return 1
-    }
-
-    private func animateCurrentLetter() {
-        guard layout.segments.indices.contains(currentIndex) else {
-            strokeProgress = []
-            return
-        }
-        let strokes = layout.segments[currentIndex].strokes
-        if strokes.isEmpty {
-            strokeProgress = []
-            return
-        }
-        strokeProgress = Array(repeating: 0, count: strokes.count)
-        let generation = animationToken
-        let secondsPerPoint: Double = 0.002
-        let minimumDuration: Double = 0.45
-        let maximumDuration: Double = 1.35
-        let gapDuration: Double = 0.15
-        var cumulativeDelay: Double = 0
-
-        for (index, stroke) in strokes.enumerated() {
-            let rawDuration = Double(stroke.length) * secondsPerPoint
-            let duration = max(minimumDuration, min(maximumDuration, rawDuration.isFinite ? rawDuration : minimumDuration))
-            let localDelay = cumulativeDelay
-
-            DispatchQueue.main.asyncAfter(deadline: .now() + localDelay) {
-                guard generation == animationToken else { return }
-                withAnimation(.linear(duration: duration)) {
-                    if index < strokeProgress.count {
-                        strokeProgress[index] = 1
-                    }
-                }
-            }
-
-            cumulativeDelay += duration + gapDuration
-        }
-    }
-}
-
 // MARK: - Practice Canvas
 
 private struct LetterPracticeCanvas: View {
     let layout: WordLayout
     let metrics: PracticeCanvasMetrics
     let resetTrigger: Int
+    let previewTrigger: Int
     let currentIndex: Int
     let guidesEnabled: Bool
     let difficulty: PracticeDifficulty
@@ -650,6 +554,9 @@ private struct LetterPracticeCanvas: View {
     @State private var activeStrokeSamples: [CanvasStrokeSample] = []
     @State private var letterCelebrationVisible = false
     @State private var letterCelebrationToken = 0
+    @State private var previewStrokeProgress: [CGFloat] = []
+    @State private var isPreviewing = false
+    @State private var previewAnimationGeneration = 0
 
     private var profile: PracticeDifficultyProfile {
         difficulty.profile
@@ -678,7 +585,7 @@ private struct LetterPracticeCanvas: View {
     }
 
     var body: some View {
-        let canvasWidth = layout.width + layout.leadingInset * 2
+        let canvasWidth = layout.width + layout.leadingInset + layout.trailingInset
         return ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: 28, style: .continuous)
                 .stroke(Color.white.opacity(0.35), lineWidth: 1.2)
@@ -689,7 +596,8 @@ private struct LetterPracticeCanvas: View {
                               descender: layout.descender,
                               scaledXHeight: layout.scaledXHeight,
                               guideLineWidth: metrics.guideLineWidth)
-            .padding(.horizontal, layout.leadingInset)
+            .padding(.leading, layout.leadingInset)
+            .padding(.trailing, layout.trailingInset)
 
             WordGuidesOverlay(layout: layout,
                               metrics: metrics,
@@ -697,6 +605,15 @@ private struct LetterPracticeCanvas: View {
                               currentStrokeIndex: currentStrokeIndex,
                               guidesEnabled: guidesEnabled,
                               analysis: lastAnalysis)
+
+            if isPreviewing,
+               let previewSegment = currentSegment {
+                PreviewStrokeOverlay(segment: previewSegment,
+                                     progress: previewStrokeProgress,
+                                     lineWidth: previewSegment.lineWidth)
+                    .padding(.leading, layout.leadingInset)
+                    .padding(.trailing, layout.trailingInset)
+            }
 
             StaticDrawingView(drawing: frozenDrawing)
                 .allowsHitTesting(false)
@@ -711,16 +628,17 @@ private struct LetterPracticeCanvas: View {
                                     last.timestamp == sample.timestamp,
                                     last.location == sample.location {
                                      return
-                                 }
-                                 activeStrokeSamples.append(sample)
-                                 processDrawingChange(drawing, activeSamples: activeStrokeSamples)
-                             },
-                             onLiveStrokeDidEnd: {
-                                 activeStrokeSamples.removeAll()
-                                 processDrawingChange(drawing, activeSamples: activeStrokeSamples)
-                             },
-                             allowFingerFallback: allowFingerInput,
-                             lineWidth: validationConfiguration.studentLineWidth)
+                                  }
+                                  activeStrokeSamples.append(sample)
+                                  processDrawingChange(drawing, activeSamples: activeStrokeSamples)
+                              },
+                              onLiveStrokeDidEnd: {
+                                  activeStrokeSamples.removeAll()
+                                  processDrawingChange(drawing, activeSamples: activeStrokeSamples)
+                              },
+                              allowFingerFallback: allowFingerInput,
+                              lineWidth: validationConfiguration.studentLineWidth)
+                .allowsHitTesting(!isPreviewing)
                 .padding(.horizontal, 0)
                 .frame(width: canvasWidth, height: canvasHeight)
 
@@ -769,9 +687,15 @@ private struct LetterPracticeCanvas: View {
                 restartCurrentAttempt(clearCompleted: true)
             }
         }
+        .onChange(of: previewTrigger) { _, _ in
+            DispatchQueue.main.async {
+                startPreviewAnimation()
+            }
+        }
     }
 
     private func resetCanvas() {
+        cancelPreview()
         drawing = PKDrawing()
         frozenDrawing = PKDrawing()
         warningMessage = nil
@@ -787,6 +711,7 @@ private struct LetterPracticeCanvas: View {
     }
 
     private func restartCurrentAttempt(clearCompleted: Bool = false) {
+        cancelPreview()
         drawing = PKDrawing()
         if clearCompleted {
             frozenDrawing = PKDrawing()
@@ -803,8 +728,69 @@ private struct LetterPracticeCanvas: View {
         letterCelebrationToken &+= 1
     }
 
+    private func startPreviewAnimation() {
+        previewAnimationGeneration &+= 1
+        let generation = previewAnimationGeneration
+        previewStrokeProgress = []
+        isPreviewing = false
+
+        guard let segment = currentSegment,
+              !segment.strokes.isEmpty else {
+            return
+        }
+
+        isPreviewing = true
+        previewStrokeProgress = Array(repeating: 0, count: segment.strokes.count)
+
+        let secondsPerPoint: Double = 0.002
+        let minimumDuration: Double = 0.45
+        let maximumDuration: Double = 1.35
+        let gapDuration: Double = 0.15
+
+        var cumulativeDelay: Double = 0
+        var completionDelay: Double = 0
+
+        for (index, stroke) in segment.strokes.enumerated() {
+            let rawDuration = Double(stroke.length) * secondsPerPoint
+            let duration = max(minimumDuration,
+                               min(maximumDuration, rawDuration.isFinite ? rawDuration : minimumDuration))
+            let localDelay = cumulativeDelay
+            completionDelay = localDelay + duration
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + localDelay) {
+                guard generation == previewAnimationGeneration else { return }
+                withAnimation(.linear(duration: duration)) {
+                    if index < previewStrokeProgress.count {
+                        previewStrokeProgress[index] = 1
+                    }
+                }
+            }
+
+            cumulativeDelay += duration + gapDuration
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + completionDelay + 0.05) {
+            guard generation == previewAnimationGeneration else { return }
+            withAnimation(.easeOut(duration: 0.2)) {
+                isPreviewing = false
+            }
+            previewStrokeProgress = []
+        }
+    }
+
+    private func cancelPreview() {
+        previewAnimationGeneration &+= 1
+        previewStrokeProgress = []
+        isPreviewing = false
+    }
+
     private func processDrawingChange(_ updated: PKDrawing,
                                       activeSamples: [CanvasStrokeSample] = []) {
+        if isPreviewing {
+            drawing = PKDrawing()
+            return
+        }
+
         guard let segment = currentSegment else {
             drawing = PKDrawing()
             currentStrokeIndex = 0
@@ -1016,6 +1002,29 @@ private struct LetterCelebrationOverlay: View {
     }
 }
 
+private struct PreviewStrokeOverlay: View {
+    let segment: WordLayout.Segment
+    let progress: [CGFloat]
+    let lineWidth: CGFloat
+
+    private let previewColor = Color(red: 0.32, green: 0.52, blue: 0.98)
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            ForEach(Array(segment.strokes.enumerated()), id: \.element.id) { index, stroke in
+                let amount = index < progress.count ? progress[index] : 0
+                stroke.path
+                    .trim(from: 0, to: amount)
+                    .stroke(previewColor,
+                            style: StrokeStyle(lineWidth: lineWidth,
+                                               lineCap: .round,
+                                               lineJoin: .round))
+            }
+        }
+        .drawingGroup()
+    }
+}
+
 private struct WordGuidesOverlay: View {
     let layout: WordLayout
     let metrics: PracticeCanvasMetrics
@@ -1191,6 +1200,7 @@ private struct WordLayout {
     let height: CGFloat
     let scaledXHeight: CGFloat
     let leadingInset: CGFloat
+    let trailingInset: CGFloat
     let verticalInset: CGFloat
     let cacheKey: String
 
@@ -1283,6 +1293,8 @@ private struct WordLayout {
             let adjustedInset = availableMargin / 2
             leadingInsetValue = max(min(adjustedInset, desiredInset), 0)
         }
+
+        var trailingInsetValue = leadingInsetValue
 
         let availableInnerWidth = max(availableWidth - leadingInsetValue * 2, 0)
         let targetInnerWidth = max(minimalInnerWidth, availableInnerWidth)
@@ -1440,7 +1452,7 @@ private struct WordLayout {
         } else {
             trailingGap = baseSpacing
         }
-        cursor += trailingGap
+        trailingInsetValue = max(trailingInsetValue, trailingGap)
 
         self.segments = segments
         let resolvedXHeight: CGFloat
@@ -1453,12 +1465,13 @@ private struct WordLayout {
         self.ascender = rowAscender
         self.descender = rowDescender
         let contentWidth = max(cursor - leadingInsetValue, minimalInnerWidth)
-
         self.width = contentWidth
         self.height = totalHeight
         self.leadingInset = leadingInsetValue
+        self.trailingInset = trailingInsetValue
         self.verticalInset = verticalInset
-        self.cacheKey = "\(items.map { $0.character })|\(availableWidth)|\(rowAscender)|\(isLeftHanded)"
+        let scaleKey = String(format: "%.4f", Double(metrics.scale))
+        self.cacheKey = "\(items.map { $0.character })|\(availableWidth)|\(rowAscender)|\(isLeftHanded)|\(scaleKey)"
     }
 
     private static func convert(point: CGPoint,
@@ -1636,17 +1649,70 @@ private extension PKDrawing {
     }
 }
 
+private struct PracticeCanvasSizing {
+    let layout: WordLayout
+    let metrics: PracticeCanvasMetrics
+
+    static func resolve(items: [LetterTimelineItem],
+                        availableWidth: CGFloat,
+                        baseMetrics: PracticeCanvasMetrics,
+                        isLeftHanded: Bool,
+                        minimumScale: CGFloat = 0.55) -> PracticeCanvasSizing {
+        guard availableWidth.isFinite, availableWidth > 0 else {
+            let fallbackLayout = WordLayout(items: items,
+                                            availableWidth: max(availableWidth, 0),
+                                            metrics: baseMetrics,
+                                            isLeftHanded: isLeftHanded)
+            return PracticeCanvasSizing(layout: fallbackLayout, metrics: baseMetrics)
+        }
+
+        var scale = baseMetrics.scale
+        var metrics = baseMetrics
+        var layout = WordLayout(items: items,
+                                availableWidth: availableWidth,
+                                metrics: metrics,
+                                isLeftHanded: isLeftHanded)
+
+        for _ in 0..<4 {
+            let totalWidth = layout.width + layout.leadingInset + layout.trailingInset
+            if totalWidth <= availableWidth || scale <= minimumScale + 0.0001 {
+                break
+            }
+            let ratio = max(min(availableWidth / max(totalWidth, 1), 1), 0)
+            let nextScale = max(minimumScale, scale * ratio)
+            if abs(nextScale - scale) < 0.001 {
+                scale = nextScale
+                break
+            }
+            scale = nextScale
+            metrics = baseMetrics.scaled(by: scale)
+            layout = WordLayout(items: items,
+                                availableWidth: availableWidth,
+                                metrics: metrics,
+                                isLeftHanded: isLeftHanded)
+        }
+
+        return PracticeCanvasSizing(layout: layout, metrics: metrics)
+    }
+}
+
 private struct PracticeCanvasMetrics {
     let strokeSize: StrokeSizePreference
+    let scale: CGFloat
 
-    var rowMetrics: RowMetrics { strokeSize.metrics }
+    init(strokeSize: StrokeSizePreference, scale: CGFloat = 1) {
+        self.strokeSize = strokeSize
+        self.scale = scale
+    }
+
+    var rowMetrics: RowMetrics {
+        let base = strokeSize.metrics
+        return RowMetrics(ascender: base.ascender * scale,
+                          descender: base.descender * scale)
+    }
 
     var canvasPadding: CGFloat {
-        switch strokeSize {
-        case .large: return 110
-        case .standard: return 90
-        case .compact: return 70
-        }
+        baseCanvasPadding * scale
     }
 
     var canvasHeight: CGFloat {
@@ -1654,6 +1720,34 @@ private struct PracticeCanvasMetrics {
     }
 
     var practiceLineWidth: CGFloat {
+        basePracticeLineWidth * scale
+    }
+
+    var guideLineWidth: CGFloat {
+        baseGuideLineWidth * scale
+    }
+
+    var startDotSize: CGFloat {
+        baseStartDotSize * scale
+    }
+
+    var userInkWidth: CGFloat {
+        baseUserInkWidth * scale
+    }
+
+    func scaled(by newScale: CGFloat) -> PracticeCanvasMetrics {
+        PracticeCanvasMetrics(strokeSize: strokeSize, scale: newScale)
+    }
+
+    private var baseCanvasPadding: CGFloat {
+        switch strokeSize {
+        case .large: return 110
+        case .standard: return 90
+        case .compact: return 70
+        }
+    }
+
+    private var basePracticeLineWidth: CGFloat {
         switch strokeSize {
         case .large: return 9.5
         case .standard: return 7.2
@@ -1661,7 +1755,7 @@ private struct PracticeCanvasMetrics {
         }
     }
 
-    var guideLineWidth: CGFloat {
+    private var baseGuideLineWidth: CGFloat {
         switch strokeSize {
         case .large: return 7.5
         case .standard: return 5.8
@@ -1669,7 +1763,7 @@ private struct PracticeCanvasMetrics {
         }
     }
 
-    var startDotSize: CGFloat {
+    private var baseStartDotSize: CGFloat {
         switch strokeSize {
         case .large: return 32
         case .standard: return 24
@@ -1677,12 +1771,11 @@ private struct PracticeCanvasMetrics {
         }
     }
 
-    var userInkWidth: CGFloat {
+    private var baseUserInkWidth: CGFloat {
         switch strokeSize {
         case .large: return 8.2
         case .standard: return 6.4
         case .compact: return 4.8
         }
     }
-
 }
