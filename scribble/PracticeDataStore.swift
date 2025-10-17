@@ -12,7 +12,6 @@ final class PracticeDataStore: ObservableObject {
     @Published private(set) var attemptsByLetter: [String: [LetterAttemptRecord]] = [:]
     @Published private(set) var masteryByLetter: [String: LetterMasteryRecord] = [:]
     @Published private(set) var settings: UserSettings = .default
-    @Published private(set) var latestFlowOutcomes: [String: LetterFlowOutcome] = [:]
     @Published private(set) var contentVersion: String
     @Published private(set) var profile: UserProfile = .default
     @Published private(set) var xpEvents: [XPEvent] = []
@@ -175,17 +174,6 @@ final class PracticeDataStore: ObservableObject {
         return UnlockEvent(newlyUnlockedLetterId: nextId)
     }
 
-    func recordFlowOutcome(letterId: String,
-                           aggregatedScore: ScoreResult,
-                           stageSummaries: [StageAttemptSummary],
-                           completedAt: Date) {
-        latestFlowOutcomes[letterId] = LetterFlowOutcome(letterId: letterId,
-                                                         aggregatedScore: aggregatedScore,
-                                                         stageSummaries: stageSummaries,
-                                                         completedAt: completedAt)
-        saveSnapshot()
-    }
-
     private func loadSnapshot() {
         guard FileManager.default.fileExists(atPath: persistenceURL.path) else {
             seedDefaults()
@@ -208,11 +196,6 @@ final class PracticeDataStore: ObservableObject {
                 lessonProgressRecords = Dictionary(uniqueKeysWithValues: storedLessonProgress.map { ($0.lessonId, $0) })
             } else {
                 lessonProgressRecords = [:]
-            }
-            if let outcomes = snapshot.flowOutcomes {
-                latestFlowOutcomes = Dictionary(uniqueKeysWithValues: outcomes.map { ($0.letterId, $0) })
-            } else {
-                latestFlowOutcomes = [:]
             }
             seedMissingDefaults()
             if contentVersion != assetsVersion {
@@ -238,7 +221,6 @@ final class PracticeDataStore: ObservableObject {
                                             mastery: mastery,
                                             settings: settings,
                                             contentVersion: contentVersion,
-                                            flowOutcomes: orderedFlowOutcomes(),
                                             profile: profile,
                                             xpEvents: xpEvents.sorted(by: { $0.createdAt < $1.createdAt }),
                                             lessonProgress: orderedLessonProgress())
@@ -250,10 +232,6 @@ final class PracticeDataStore: ObservableObject {
         }
     }
 
-    private func orderedFlowOutcomes() -> [LetterFlowOutcome] {
-        let order = Self.focusLetters
-        return order.compactMap { latestFlowOutcomes[$0] }
-    }
 
     private func orderedLessonProgress() -> [LessonProgressRecord] {
         lessonProgressRecords.values.sorted(by: { $0.lessonId < $1.lessonId })
@@ -262,7 +240,6 @@ final class PracticeDataStore: ObservableObject {
     private func seedDefaults() {
         attemptsByLetter = [:]
         masteryByLetter = [:]
-        latestFlowOutcomes = [:]
         for (index, letterId) in Self.focusLetters.enumerated() {
             masteryByLetter[letterId] = defaultMasteryRecord(for: letterId, unlocked: index == 0)
         }

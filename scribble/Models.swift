@@ -17,41 +17,6 @@ enum PracticeMode: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-enum PracticeStage: Int, Codable, CaseIterable, Identifiable {
-    case guidedTrace
-    case dotGuided
-    case freePractice
-
-    var id: Int { rawValue }
-
-    var displayName: String {
-        switch self {
-        case .guidedTrace: return "Trace"
-        case .dotGuided: return "Trace with Dots"
-        case .freePractice: return "Free Practice"
-        }
-    }
-}
-
-struct TipMessage: Identifiable, Equatable, Codable {
-    let id: String
-    let text: String
-
-    static let catalog: [String: String] = [
-        "start-point": "Begin where the green dot appears.",
-        "stroke-order": "Follow the strokes in the order shown.",
-        "direction": "Match the stroke direction.",
-        "shape-tighten": "Stay closer to the letter shape."
-    ]
-}
-
-struct StageOutcome {
-    let stage: PracticeStage
-    let score: ScoreResult
-    let tips: [TipMessage]
-    let duration: TimeInterval
-}
-
 enum PracticeDifficulty: String, Codable, CaseIterable, Identifiable {
     case beginner
     case intermediate
@@ -150,6 +115,34 @@ extension PracticeDifficulty {
                 startForgivenessMultiplier: 1.3
             )
         }
+    }
+}
+
+extension PracticeDifficultyProfile {
+    func validationTuning(startRadius: CGFloat,
+                          corridorRadius: CGFloat,
+                          softLimit: CGFloat) -> StrokeValidationTuning {
+        let waypointFractions: [Double]
+        let minimumTravelRatio: Double
+
+        switch completionCoverageThreshold {
+        case ..<0.7:
+            waypointFractions = [0.33, 0.66]
+            minimumTravelRatio = max(completionCoverageThreshold, 0.6)
+        case ..<0.8:
+            waypointFractions = [0.25, 0.5, 0.75]
+            minimumTravelRatio = max(completionCoverageThreshold, 0.7)
+        default:
+            waypointFractions = [0.2, 0.4, 0.6, 0.8]
+            minimumTravelRatio = max(completionCoverageThreshold, 0.8)
+        }
+
+        return StrokeValidationTuning(startRadius: startRadius,
+                                      corridorRadius: corridorRadius,
+                                      softLimit: softLimit,
+                                      minimumInsideRatio: completionCoverageThreshold,
+                                      minimumTravelRatio: minimumTravelRatio,
+                                      waypointFractions: waypointFractions)
     }
 }
 
@@ -488,7 +481,6 @@ struct PracticeDataSnapshot: Codable {
     var mastery: [LetterMasteryRecord]
     var settings: UserSettings?
     var contentVersion: String?
-    var flowOutcomes: [LetterFlowOutcome]?
     var profile: UserProfile?
     var xpEvents: [XPEvent]?
     var lessonProgress: [LessonProgressRecord]?
@@ -561,17 +553,4 @@ struct UserSettings: Codable, Equatable {
                                         strokeSize: .standard,
                                         difficulty: .intermediate,
                                         prefersGuides: true)
-}
-
-struct StageAttemptSummary: Codable, Equatable {
-    let stage: PracticeStage
-    let score: ScoreResult
-    let durationMs: Int
-}
-
-struct LetterFlowOutcome: Codable, Equatable {
-    let letterId: String
-    let aggregatedScore: ScoreResult
-    let stageSummaries: [StageAttemptSummary]
-    let completedAt: Date
 }

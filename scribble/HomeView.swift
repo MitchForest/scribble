@@ -37,7 +37,7 @@ struct HomeView: View {
     private var streakChip: some View {
         Button {
             withAnimation(.easeInOut(duration: 0.25)) {
-                dialogInitialTab = .today
+                dialogInitialTab = .streak
                 activeDialog = .profile
             }
         } label: {
@@ -123,7 +123,7 @@ struct HomeView: View {
                                   progress: progress,
                                   onOpen: {
                                       withAnimation(.easeInOut(duration: 0.25)) {
-                                          dialogInitialTab = .profile
+                                          dialogInitialTab = .today
                                           activeDialog = .profile
                                       }
                                   })

@@ -7,9 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		BD4F01082EA030000052EAF5 /* PracticeTemplateScalingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD4F01072EA030000052EAF5 /* PracticeTemplateScalingTests.swift */; };
-		BD4F01102EA030000052EAF5 /* StartPointGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD4F01112EA030000052EAF5 /* StartPointGateTests.swift */; };
-		BD4F01122EA030000052EAF5 /* PracticeEvaluatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD4F01132EA030000052EAF5 /* PracticeEvaluatorTests.swift */; };
 		BD4F01232EA030000052EAF5 /* scribble/AppAssets in Resources */ = {isa = PBXBuildFile; fileRef = BD4F01222EA030000052EAF5 /* scribble/AppAssets */; };
 /* End PBXBuildFile section */
 
@@ -26,10 +23,7 @@
 /* Begin PBXFileReference section */
 		BD1CDADC2EA00BD60052EAF5 /* scribble.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = scribble.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BD4F01062EA030000052EAF5 /* scribbleTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = scribbleTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		BD4F01072EA030000052EAF5 /* PracticeTemplateScalingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PracticeTemplateScalingTests.swift; sourceTree = "<group>"; };
 		BD4F010C2EA030000052EAF5 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		BD4F01112EA030000052EAF5 /* StartPointGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartPointGateTests.swift; sourceTree = "<group>"; };
-		BD4F01132EA030000052EAF5 /* PracticeEvaluatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PracticeEvaluatorTests.swift; sourceTree = "<group>"; };
 		BD4F01222EA030000052EAF5 /* scribble/AppAssets */ = {isa = PBXFileReference; lastKnownFileType = folder; path = scribble/AppAssets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -81,9 +75,6 @@
 		BD4F01092EA030000052EAF5 /* scribbleTests */ = {
 			isa = PBXGroup;
 			children = (
-				BD4F01072EA030000052EAF5 /* PracticeTemplateScalingTests.swift */,
-				BD4F01112EA030000052EAF5 /* StartPointGateTests.swift */,
-				BD4F01132EA030000052EAF5 /* PracticeEvaluatorTests.swift */,
 				BD4F010C2EA030000052EAF5 /* Info.plist */,
 			);
 			path = scribbleTests;
@@ -192,9 +183,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				BD4F01082EA030000052EAF5 /* PracticeTemplateScalingTests.swift in Sources */,
-				BD4F01102EA030000052EAF5 /* StartPointGateTests.swift in Sources */,
-				BD4F01122EA030000052EAF5 /* PracticeEvaluatorTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

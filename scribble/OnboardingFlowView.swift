@@ -155,7 +155,7 @@ struct OnboardingFlowView: View {
     private func stepView(for step: Step) -> some View {
         switch step {
         case .intro:
-            IntroStepView(onSelectProvider: {})
+            IntroStepView(onSelectProvider: advanceIfReady)
         case .name:
             NameStepView(name: $name,
                          isFocused: $nameFieldFocused,
@@ -178,11 +178,7 @@ struct OnboardingFlowView: View {
     private var navigationControls: some View {
         VStack(spacing: 20) {
             HStack(spacing: 16) {
-                Button(action: {
-                    if canGoBack {
-                        goToPreviousStep()
-                    }
-                }) {
+                Button(action: goBackIfPossible) {
                     Text("Back")
                         .font(.system(size: 22, weight: .bold, design: .rounded))
                         .foregroundColor(canGoBack ? Palette.secondary : Palette.secondary.opacity(0.4))
@@ -200,11 +196,7 @@ struct OnboardingFlowView: View {
                 .disabled(!canGoBack)
                 .shadow(color: Color.black.opacity(0.08), radius: 10, x: 0, y: 6)
 
-                Button(action: {
-                    if canProceed {
-                        advanceIfPossible()
-                    }
-                }) {
+                Button(action: advanceIfReady) {
                     Text(nextButtonTitle)
                         .font(.system(size: 24, weight: .heavy, design: .rounded))
                         .foregroundColor(Palette.accentDark)
@@ -234,6 +226,16 @@ struct OnboardingFlowView: View {
             return index > 0
         }
         return false
+    }
+
+    private func goBackIfPossible() {
+        guard canGoBack else { return }
+        goToPreviousStep()
+    }
+
+    private func advanceIfReady() {
+        guard canProceed else { return }
+        advanceIfPossible()
     }
 
     private func prepareInitialState() {

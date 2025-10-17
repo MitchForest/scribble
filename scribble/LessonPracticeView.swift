@@ -68,7 +68,7 @@ struct LessonPracticeView: View {
             HStack(spacing: 16) {
                 StreakBadge(streak: streak) {
                     withAnimation(.easeInOut(duration: 0.25)) {
-                        dialogInitialTab = .today
+                        dialogInitialTab = .streak
                         activeDialog = .profile
                     }
                 }
@@ -76,7 +76,7 @@ struct LessonPracticeView: View {
                                   progress: dataStore.dailyProgressRatio(),
                                   onOpen: {
                                       withAnimation(.easeInOut(duration: 0.25)) {
-                                          dialogInitialTab = .profile
+                                          dialogInitialTab = .today
                                           activeDialog = .profile
                                       }
                                   })
@@ -486,10 +486,11 @@ private struct LetterPracticeCanvas: View {
 
     @State private var drawing = PKDrawing()
     @State private var frozenDrawing = PKDrawing()
-    @State private var previousStrokeCount = 0
     @State private var warningMessage: String?
     @State private var currentStrokeIndex = 0
     @State private var lastWarningTime: Date?
+    @State private var previousCompletedCount = 0
+    @State private var didCompleteCurrentLetter = false
 
     private var profile: PracticeDifficultyProfile {
         difficulty.profile
@@ -511,30 +512,13 @@ private struct LetterPracticeCanvas: View {
         layout.segments[safe: currentIndex]
     }
 
-    private var expectedStrokeCount: Int {
-        currentSegment?.strokes.count ?? 0
-    }
-
-    private var deviationSlack: CGFloat {
-        switch difficulty {
-        case .beginner: return 0.12
-        case .intermediate: return 0.08
-        case .expert: return 0.05
-        }
-    }
-
-    private var maxOutsideRatio: CGFloat {
-        switch difficulty {
-        case .beginner: return 0.32
-        case .intermediate: return 0.26
-        case .expert: return 0.18
-        }
-    }
-
-    private var mergeCoverageCorridor: CGFloat {
-        let inkWidth = metrics.userInkWidth
-        let guideWidth = metrics.practiceLineWidth
-        return max(inkWidth * 1.05, guideWidth * 0.7, 10)
+    private var validationTuning: StrokeValidationTuning {
+        let start = metrics.startTolerance(for: difficulty)
+        let corridor = metrics.corridorRadius(for: difficulty)
+        let soft = metrics.corridorSoftLimit(for: difficulty)
+        return profile.validationTuning(startRadius: start,
+                                        corridorRadius: corridor,
+                                        softLimit: soft)
     }
 
     var body: some View {
@@ -589,8 +573,10 @@ private struct LetterPracticeCanvas: View {
         .onChange(of: currentIndex) {
             DispatchQueue.main.async {
                 drawing = PKDrawing()
-                previousStrokeCount = 0
                 currentStrokeIndex = 0
+                previousCompletedCount = 0
+                didCompleteCurrentLetter = false
+                warningMessage = nil
             }
         }
     }
@@ -599,242 +585,113 @@ private struct LetterPracticeCanvas: View {
         drawing = PKDrawing()
         frozenDrawing = PKDrawing()
         warningMessage = nil
-        previousStrokeCount = 0
         currentStrokeIndex = 0
         lastWarningTime = nil
+        previousCompletedCount = 0
+        didCompleteCurrentLetter = false
     }
 
     private func processDrawingChange(_ updated: PKDrawing) {
         guard let segment = currentSegment else {
             drawing = PKDrawing()
-            return
-        }
-        let strokes = updated.strokes
-        guard !strokes.isEmpty else {
-            previousStrokeCount = 0
             currentStrokeIndex = 0
+            previousCompletedCount = 0
+            didCompleteCurrentLetter = false
+            warningMessage = nil
             return
         }
 
-        if strokes.count > previousStrokeCount, let newStroke = strokes.last {
-            let strokeIndex = min(strokes.count - 1, segment.strokes.count - 1)
-            let templateStroke = segment.strokes[strokeIndex]
+        drawing = updated
 
-            guard validateStartPoint(for: newStroke, templateStroke: templateStroke) else {
-                revertDrawing(updated)
-                return
+        guard !updated.strokes.isEmpty else {
+            currentStrokeIndex = 0
+            previousCompletedCount = 0
+            didCompleteCurrentLetter = false
+            warningMessage = nil
+            return
+        }
+
+        let template = makeTraceTemplate(for: segment)
+        let analysis = StrokeTraceAnalyzer.analyze(drawing: updated,
+                                                   template: template,
+                                                   tuning: validationTuning)
+
+        if analysis.completedCount > previousCompletedCount {
+            for index in previousCompletedCount..<analysis.completedCount {
+                onStrokeValidated(index, segment.strokes.count)
             }
-
-            guard validateDeviation(for: newStroke, templateStroke: templateStroke) else {
-                showWarning("Stay close to the dotted path")
-                revertDrawing(updated)
-                return
-            }
-
-            currentStrokeIndex = min(segment.strokes.count,
-                                     max(currentStrokeIndex, strokeIndex + 1))
-            onStrokeValidated(strokeIndex, segment.strokes.count)
-            onSuccessFeedback()
+            previousCompletedCount = analysis.completedCount
             if hapticsEnabled {
                 HapticsManager.shared.success()
             }
+            onSuccessFeedback()
+        } else if analysis.completedCount < previousCompletedCount {
+            previousCompletedCount = analysis.completedCount
         }
 
-        previousStrokeCount = strokes.count
+        currentStrokeIndex = min(analysis.nextIndex, segment.strokes.count)
+        handleWarnings(for: analysis)
 
-        if shouldCompleteLetter(strokes: strokes, templateStrokes: segment.strokes) {
-            completeLetter()
+        if analysis.isComplete && !didCompleteCurrentLetter {
+            didCompleteCurrentLetter = true
+            DispatchQueue.main.async {
+                completeLetter()
+            }
+        } else if !analysis.isComplete {
+            didCompleteCurrentLetter = false
         }
     }
 
-    private func validateStartPoint(for stroke: PKStroke, templateStroke: WordLayout.ScaledStroke) -> Bool {
-        guard let firstPoint = stroke.path.firstLocation else { return false }
-        let tolerance = metrics.startTolerance(for: difficulty)
-        let snapRadius = tolerance * difficulty.profile.startSnapMultiplier
-        let distance = hypot(firstPoint.x - templateStroke.startPoint.x,
-                             firstPoint.y - templateStroke.startPoint.y)
-
-        if distance <= snapRadius || distance <= tolerance {
-            return true
-        }
-
-        let forgiveness = tolerance * difficulty.profile.startForgivenessMultiplier
-        if distance <= forgiveness {
-            showWarning("Start closer to the green dot")
-            return true
-        }
-
-        showWarning("Start at the green dot")
-        return false
+    private func makeTraceTemplate(for segment: WordLayout.Segment) -> StrokeTraceTemplate {
+        let strokes = segment.strokes
+            .sorted { $0.order < $1.order }
+            .map { stroke in
+                StrokeTraceTemplate.Stroke(id: stroke.id,
+                                           order: stroke.order,
+                                           samples: stroke.sampledPoints,
+                                           startPoint: stroke.startPoint,
+                                           endPoint: stroke.endPoint)
+            }
+        return StrokeTraceTemplate(strokes: strokes)
     }
 
-    private func validateDeviation(for stroke: PKStroke, templateStroke: WordLayout.ScaledStroke) -> Bool {
-        let userPoints = stroke.sampledPoints(step: 4)
-        guard !userPoints.isEmpty else { return false }
-
-        let corridor = metrics.corridorRadius(for: difficulty)
-        let softLimit = metrics.corridorSoftLimit(for: difficulty)
-        let hardLimit = softLimit + max(12, corridor * 0.6)
-
-        var outside = 0
-        var softBreaches = 0
-
-        for point in userPoints {
-            let distance = nearestDistance(for: point,
-                                           templateStroke: templateStroke,
-                                           corridor: corridor)
-            if distance > hardLimit {
-                return false
-            }
-            if distance > softLimit {
-                softBreaches += 1
-                outside += 1
-                continue
-            }
-            if distance > corridor {
-                outside += 1
-            }
+    private func handleWarnings(for analysis: StrokeTraceAnalyzer.Result) {
+        if let failure = analysis.failure {
+            presentFailure(failure)
+            return
         }
 
-        let samples = userPoints.count
-        let allowedSoftBreaches = max(2, Int(round(CGFloat(samples) * deviationSlack)))
-        if softBreaches > allowedSoftBreaches {
-            return false
+        if let warning = analysis.activeWarning {
+            presentSoftWarning(warning.kind)
+        } else {
+            warningMessage = nil
         }
-
-        let outsideRatio = samples > 0 ? CGFloat(outside) / CGFloat(samples) : 0
-        return outsideRatio <= maxOutsideRatio
     }
 
-    private func nearestDistance(for point: CGPoint,
-                                 templateStroke: WordLayout.ScaledStroke,
-                                 corridor: CGFloat) -> CGFloat {
-        var nearest = CGFloat.greatestFiniteMagnitude
-        for templatePoint in templateStroke.sampledPoints {
-            let distance = hypot(point.x - templatePoint.x, point.y - templatePoint.y)
-            if distance < nearest {
-                nearest = distance
-                if nearest < corridor * 0.25 {
-                    break
-                }
-            }
+    private func presentFailure(_ failure: StrokeTraceAnalyzer.FailureReason) {
+        let message: String
+        switch failure {
+        case .missedStart:
+            message = "Start at the green dot"
+        case .leftCorridor:
+            message = "Stay inside the blue path"
+        case .insufficientCoverage:
+            message = "Trace more of the stroke"
+        case .missedWaypoint:
+            message = "Follow the stroke path"
         }
-        return nearest
+        showWarning(message)
     }
 
-    private func nearestDistanceToTemplate(_ point: CGPoint,
-                                           templateStrokes: [WordLayout.ScaledStroke],
-                                           corridor: CGFloat) -> CGFloat {
-        var nearest = CGFloat.greatestFiniteMagnitude
-        for stroke in templateStrokes {
-            let distance = nearestDistance(for: point,
-                                           templateStroke: stroke,
-                                           corridor: corridor)
-            if distance < nearest {
-                nearest = distance
-                if nearest < corridor * 0.2 {
-                    break
-                }
-            }
+    private func presentSoftWarning(_ warning: StrokeTraceAnalyzer.WarningKind) {
+        let message: String
+        switch warning {
+        case .deviation:
+            message = "Stay inside the blue path"
+        case .slowProgress:
+            message = "Trace forward along the stroke"
         }
-        return nearest
-    }
-
-    private func nearestDistanceToUser(_ point: CGPoint,
-                                       userPoints: [CGPoint],
-                                       corridor: CGFloat) -> CGFloat {
-        var nearest = CGFloat.greatestFiniteMagnitude
-        for candidate in userPoints {
-            let distance = hypot(point.x - candidate.x, point.y - candidate.y)
-            if distance < nearest {
-                nearest = distance
-                if nearest < corridor * 0.2 {
-                    break
-                }
-            }
-        }
-        return nearest
-    }
-
-    private func coverageRatio(for strokes: [PKStroke],
-                               templateStrokes: [WordLayout.ScaledStroke],
-                               corridor: CGFloat,
-                               perStroke: inout [Double]) -> Double {
-        let userSamples = strokes.flatMap { $0.sampledPoints(step: 3) }
-        guard !userSamples.isEmpty else { return 0 }
-
-        let templateSamples = templateStrokes.flatMap(\.sampledPoints)
-        guard !templateSamples.isEmpty else { return 0 }
-
-        var userInside = 0
-        for point in userSamples {
-            let distance = nearestDistanceToTemplate(point,
-                                                     templateStrokes: templateStrokes,
-                                                     corridor: corridor)
-            if distance <= corridor {
-                userInside += 1
-            }
-        }
-        let userCoverage = Double(userInside) / Double(userSamples.count)
-
-        perStroke = templateStrokes.map { stroke in
-            let points = stroke.sampledPoints
-            guard !points.isEmpty else { return 1 }
-            var inside = 0
-            for point in points {
-                let distance = nearestDistanceToUser(point,
-                                                     userPoints: userSamples,
-                                                     corridor: corridor)
-                if distance <= corridor {
-                    inside += 1
-                }
-            }
-            return Double(inside) / Double(points.count)
-        }
-
-        var templateInside = 0
-        for point in templateSamples {
-            let distance = nearestDistanceToUser(point,
-                                                 userPoints: userSamples,
-                                                 corridor: corridor)
-            if distance <= corridor {
-                templateInside += 1
-            }
-        }
-        let templateCoverage = Double(templateInside) / Double(templateSamples.count)
-
-        return min(userCoverage, templateCoverage)
-    }
-
-    private func shouldCompleteLetter(strokes: [PKStroke],
-                                      templateStrokes: [WordLayout.ScaledStroke]) -> Bool {
-        guard !templateStrokes.isEmpty else { return false }
-
-        if currentStrokeIndex >= templateStrokes.count {
-            return true
-        }
-
-        guard profile.mergedStrokeAllowance > 0 else { return false }
-
-        let remaining = templateStrokes.count - currentStrokeIndex
-        guard remaining <= profile.mergedStrokeAllowance else { return false }
-
-        var perStrokeCoverage: [Double] = []
-        let coverage = coverageRatio(for: strokes,
-                                     templateStrokes: templateStrokes,
-                                     corridor: mergeCoverageCorridor,
-                                     perStroke: &perStrokeCoverage)
-        if coverage >= profile.completionCoverageThreshold {
-            let tailRange = currentStrokeIndex..<templateStrokes.count
-            let tailSatisfied = tailRange.allSatisfy { index in
-                perStrokeCoverage[safe: index] ?? 0 >= profile.completionCoverageThreshold
-            }
-            if tailSatisfied {
-                currentStrokeIndex = templateStrokes.count
-                return true
-            }
-        }
-        return false
+        showWarning(message)
     }
 
     private func showWarning(_ message: String) {
@@ -867,20 +724,17 @@ private struct LetterPracticeCanvas: View {
         }
     }
 
-    private func revertDrawing(_ updated: PKDrawing) {
-        let trimmed = StartPointGate.removeLastStroke(from: updated)
-        drawing = trimmed
-        previousStrokeCount = trimmed.strokes.count
-    }
-
     private func completeLetter() {
         if hapticsEnabled {
             HapticsManager.shared.success()
         }
         frozenDrawing = frozenDrawing.appending(drawing)
         drawing = PKDrawing()
-        previousStrokeCount = 0
         currentStrokeIndex = 0
+        previousCompletedCount = 0
+        didCompleteCurrentLetter = false
+        warningMessage = nil
+        lastWarningTime = nil
         onSuccessFeedback()
         onLetterComplete()
     }

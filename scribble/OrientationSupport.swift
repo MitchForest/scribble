@@ -16,13 +16,13 @@ enum OrientationManager {
         OrientationAppDelegate.orientationLock = mask
         guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
         if #available(iOS 16.0, *) {
-            do {
-                try scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask))
-            } catch {
-                // No-op: fall back to manual rotation.
+            scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask), errorHandler: nil)
+            if let rootController = scene.keyWindow?.rootViewController {
+                rootController.setNeedsUpdateOfSupportedInterfaceOrientations()
             }
+        } else {
+            UIDevice.current.setValue(orientation.rawValue, forKey: "orientation")
+            UINavigationController.attemptRotationToDeviceOrientation()
         }
-        UIDevice.current.setValue(orientation.rawValue, forKey: "orientation")
-        UINavigationController.attemptRotationToDeviceOrientation()
     }
 }

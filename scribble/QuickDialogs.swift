@@ -60,7 +60,7 @@ struct ProfileQuickActionsDialog: View {
     @State private var selectedDifficulty: PracticeDifficulty
     @State private var hasSynced = false
 
-    private let lookbackWeeks = 8
+    private let lookbackWeeks = 12
     private let weekdayOptions: [WeekdayOption] = [
         WeekdayOption(index: 0, shortLabel: "Mon", fullLabel: "Monday"),
         WeekdayOption(index: 1, shortLabel: "Tue", fullLabel: "Tuesday"),
@@ -102,10 +102,10 @@ struct ProfileQuickActionsDialog: View {
         .onAppear {
             syncFromStore()
         }
-        .onChange(of: dataStore.profile.goal) { _, _ in
+        .onChange(of: dataStore.profile.goal) { _ in
             syncGoalState()
         }
-        .onChange(of: dataStore.settings.difficulty) { _, newValue in
+        .onChange(of: dataStore.settings.difficulty) { newValue in
             selectedDifficulty = newValue
         }
     }
@@ -227,27 +227,32 @@ struct ProfileQuickActionsDialog: View {
             Text("Current streak: \(streak) \(streak == 1 ? "day" : "days")")
                 .font(.system(size: 18, weight: .heavy, design: .rounded))
                 .foregroundColor(ScribbleColors.primary)
-            CompactStreakGrid(weeks: streakWeekColumns,
-                              goalDailySeconds: goal.dailySeconds,
-                              activeWeekdays: goal.activeWeekdayIndices,
-                              dayLabels: dayLabels)
+
+            HStack {
+                Spacer(minLength: 0)
+                CompactStreakGrid(weeks: streakWeekColumns,
+                                  goalDailySeconds: goal.dailySeconds,
+                                  activeWeekdays: goal.activeWeekdayIndices,
+                                  dayLabels: dayLabels)
+                Spacer(minLength: 0)
+            }
         }
     }
 
     private var profileTab: some View {
-        infoCard(title: "Your Scribble identity") {
-            VStack(spacing: 18) {
-                DiceBearAvatar(seed: dataStore.profile.avatarSeed, size: 124)
-                    .shadow(color: Color.black.opacity(0.08), radius: 14, x: 0, y: 8)
+        infoCard(title: "Your Scribble identity", padding: 20) {
+            VStack(spacing: 16) {
+                DiceBearAvatar(seed: dataStore.profile.avatarSeed, size: 112)
+                    .shadow(color: Color.black.opacity(0.08), radius: 12, x: 0, y: 6)
 
                 Button {
                     shuffleAvatar()
                 } label: {
                     Label("Shuffle avatar", systemImage: "shuffle")
-                        .font(.system(size: 17, weight: .semibold, design: .rounded))
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
                         .foregroundColor(ScribbleColors.accentDark)
-                        .padding(.horizontal, 26)
-                        .padding(.vertical, 12)
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 11)
                         .background(
                             Capsule().fill(ScribbleColors.accent.opacity(0.35))
                         )
@@ -260,10 +265,10 @@ struct ProfileQuickActionsDialog: View {
                         .foregroundColor(ScribbleColors.secondary.opacity(0.8))
 
                     TextField("Explorer", text: $nameDraft)
-                        .font(.system(size: 20, weight: .heavy, design: .rounded))
+                        .font(.system(size: 19, weight: .heavy, design: .rounded))
                         .foregroundColor(ScribbleColors.primary)
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 16)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 15)
                         .background(
                             RoundedRectangle(cornerRadius: 26, style: .continuous)
                                 .fill(ScribbleColors.surface)
@@ -273,7 +278,7 @@ struct ProfileQuickActionsDialog: View {
                                 .stroke(ScribbleColors.inputBorder.opacity(0.5), lineWidth: 2)
                         )
                         .focused($nameFieldFocused)
-                        .onChange(of: nameDraft) { _, newValue in
+                        .onChange(of: nameDraft) { newValue in
                             commitDisplayName(newValue)
                         }
                 }
@@ -282,8 +287,8 @@ struct ProfileQuickActionsDialog: View {
     }
 
     private var goalsTab: some View {
-        infoCard(title: "Practice goals") {
-            VStack(alignment: .leading, spacing: 20) {
+        infoCard(title: "Practice goals", padding: 20) {
+            VStack(alignment: .leading, spacing: 18) {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Daily letters")
                         .font(.system(size: 15, weight: .bold, design: .rounded))
@@ -295,7 +300,7 @@ struct ProfileQuickActionsDialog: View {
                 }
 
                 Divider()
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 2)
 
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Practice days")
@@ -351,6 +356,7 @@ struct ProfileQuickActionsDialog: View {
     }
 
     private func infoCard<Content: View>(title: String? = nil,
+                                         padding: CGFloat = 24,
                                          @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             if let title {
@@ -360,7 +366,7 @@ struct ProfileQuickActionsDialog: View {
             }
             content()
         }
-        .padding(24)
+        .padding(padding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 32, style: .continuous)
@@ -372,15 +378,15 @@ struct ProfileQuickActionsDialog: View {
     private func letterAdjuster(value: Int,
                                 onIncrement: @escaping () -> Void,
                                 onDecrement: @escaping () -> Void) -> some View {
-        HStack(spacing: 18) {
+        HStack(spacing: 16) {
             adjustButton(systemName: "minus",
                          isEnabled: value > 5,
                          action: onDecrement)
 
             Text("\(value) letters")
-                .font(.system(size: 22, weight: .heavy, design: .rounded))
+                .font(.system(size: 21, weight: .heavy, design: .rounded))
                 .foregroundColor(ScribbleColors.primary)
-                .frame(minWidth: 140)
+                .frame(minWidth: 120)
 
             adjustButton(systemName: "plus",
                          isEnabled: true,
@@ -632,7 +638,7 @@ struct ProfileQuickActionsDialog: View {
         }
         let contributionsByDay = Dictionary(uniqueKeysWithValues: contributions.map { ($0.date.stripTime(using: calendar), $0) })
 
-        return (0..<lookbackWeeks).reversed().compactMap { offset in
+        return (0..<lookbackWeeks).reversed().map { offset in
             let start = calendar.date(byAdding: .weekOfYear, value: -offset, to: currentWeekStart) ?? currentWeekStart
             let days: [ContributionDay?] = (0..<7).map { dayOffset in
                 let date = calendar.date(byAdding: .day, value: dayOffset, to: start) ?? start
@@ -717,6 +723,7 @@ private struct CompactStreakGrid: View {
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 
     private func color(for day: ContributionDay?, dayIndex: Int) -> Color {
