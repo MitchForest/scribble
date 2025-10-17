@@ -369,9 +369,6 @@ private struct ReferenceLineView: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             ForEach(Array(layout.segments.enumerated()), id: \.1.id) { index, segment in
-                let statusColor = status(for: index).fillColor
-                let dotY = layout.ascender + 14
-
                 if !segment.strokes.isEmpty {
                     let color = referenceColor(for: index)
                     ForEach(Array(segment.strokes.enumerated()), id: \.element.id) { strokeIndex, stroke in
@@ -382,12 +379,6 @@ private struct ReferenceLineView: View {
                                                        lineCap: .round,
                                                        lineJoin: .round))
                     }
-
-                    Circle()
-                        .fill(statusColor)
-                        .frame(width: 11, height: 11)
-                        .position(x: segment.frame.midX,
-                                  y: dotY)
                 }
 
                 Rectangle()
@@ -402,24 +393,13 @@ private struct ReferenceLineView: View {
                     }
             }
         }
-        .frame(height: layout.height + 12)
+        .padding(.vertical, layout.verticalInset)
+        .padding(.horizontal, max(layout.leadingInset, (layout.segments.first?.lineWidth ?? 0) * 0.6))
         .onAppear { animateCurrentLetter() }
         .onChange(of: animationToken) {
             animateCurrentLetter()
         }
         .drawingGroup()
-    }
-
-    private func status(for index: Int) -> LetterStatus {
-        guard letterStates.indices.contains(index) else { return .upcoming }
-        let state = letterStates[index]
-        if index < currentIndex {
-            return state.isComplete ? .completed : .needsWork
-        } else if index == currentIndex {
-            return state.hadWarning ? .needsWork : .current
-        } else {
-            return .upcoming
-        }
     }
 
     private func referenceColor(for index: Int) -> Color {
@@ -505,10 +485,12 @@ private struct LetterPracticeCanvas: View {
     @State private var currentStrokeIndex = 0
     @State private var lastWarningTime: Date?
     @State private var previousCompletedCount = 0
+    @State private var previousCheckpointCount = 0
     @State private var didCompleteCurrentLetter = false
-    @State private var slideOffset: CGFloat = 0
     @State private var lastAnalysis: CheckpointValidator.Result?
     @State private var activeStrokeSamples: [CanvasStrokeSample] = []
+    @State private var letterCelebrationVisible = false
+    @State private var letterCelebrationToken = 0
 
     private var profile: PracticeDifficultyProfile {
         difficulty.profile
@@ -594,9 +576,15 @@ private struct LetterPracticeCanvas: View {
                               y: layout.ascender + metrics.startDotSize * 0.8)
                     .transition(.opacity)
             }
+
+            if letterCelebrationVisible {
+                LetterCelebrationOverlay()
+                    .frame(width: canvasWidth, height: canvasHeight)
+                    .allowsHitTesting(false)
+                    .transition(.scale.combined(with: .opacity))
+            }
         }
         .frame(width: canvasWidth, height: canvasHeight, alignment: .topLeading)
-        .offset(x: slideOffset)
         .padding(.vertical, 6)
         .onChange(of: layout.cacheKey) { _, _ in
             DispatchQueue.main.async {
@@ -610,7 +598,6 @@ private struct LetterPracticeCanvas: View {
                 previousCompletedCount = 0
                 didCompleteCurrentLetter = false
                 warningMessage = nil
-                slideOffset = 0
                 lastAnalysis = nil
             }
         }
@@ -628,10 +615,12 @@ private struct LetterPracticeCanvas: View {
         currentStrokeIndex = 0
         lastWarningTime = nil
         previousCompletedCount = 0
+        previousCheckpointCount = 0
         didCompleteCurrentLetter = false
-        slideOffset = 0
         lastAnalysis = nil
         activeStrokeSamples = []
+        letterCelebrationVisible = false
+        letterCelebrationToken &+= 1
     }
 
     private func restartCurrentAttempt(clearCompleted: Bool = false) {
@@ -643,10 +632,12 @@ private struct LetterPracticeCanvas: View {
         currentStrokeIndex = 0
         lastWarningTime = nil
         previousCompletedCount = 0
+        previousCheckpointCount = 0
         didCompleteCurrentLetter = false
-        slideOffset = 0
         lastAnalysis = nil
         activeStrokeSamples = []
+        letterCelebrationVisible = false
+        letterCelebrationToken &+= 1
     }
 
     private func processDrawingChange(_ updated: PKDrawing,
@@ -655,10 +646,12 @@ private struct LetterPracticeCanvas: View {
             drawing = PKDrawing()
             currentStrokeIndex = 0
             previousCompletedCount = 0
+            previousCheckpointCount = 0
             didCompleteCurrentLetter = false
             warningMessage = nil
-            slideOffset = 0
             activeStrokeSamples = []
+            letterCelebrationVisible = false
+            letterCelebrationToken &+= 1
             return
         }
 
@@ -667,9 +660,12 @@ private struct LetterPracticeCanvas: View {
         if updated.strokes.isEmpty && activeSamples.isEmpty {
             currentStrokeIndex = 0
             previousCompletedCount = 0
+            previousCheckpointCount = 0
             didCompleteCurrentLetter = false
             warningMessage = nil
             lastAnalysis = nil
+            letterCelebrationVisible = false
+            letterCelebrationToken &+= 1
             return
         }
 
@@ -682,6 +678,21 @@ private struct LetterPracticeCanvas: View {
                                                     configuration: validationConfiguration,
                                                     liveStrokeSamples: liveSamples)
         lastAnalysis = analysis
+
+        let completedCheckpointCount = analysis.completedCheckpointCount
+        if completedCheckpointCount > previousCheckpointCount {
+            if hapticsEnabled {
+                switch hapticStyle {
+                case .none:
+                    break
+                case .soft, .warning:
+                    HapticsManager.shared.notice()
+                }
+            }
+            previousCheckpointCount = completedCheckpointCount
+        } else if completedCheckpointCount < previousCheckpointCount {
+            previousCheckpointCount = completedCheckpointCount
+        }
 
         #if DEBUG
         print(
@@ -722,9 +733,7 @@ private struct LetterPracticeCanvas: View {
 
         if isComplete && !didCompleteCurrentLetter {
             didCompleteCurrentLetter = true
-            animateLineAdvance {
-                completeLetter()
-            }
+            completeLetter()
         } else if !isComplete {
             didCompleteCurrentLetter = false
         }
@@ -784,6 +793,8 @@ private struct LetterPracticeCanvas: View {
         }
     }
 
+    // Advance to the next letter without animating the canvas itself.
+    // The parent view is responsible for any set-level transition once all letters finish.
     private func completeLetter() {
         if hapticsEnabled {
             HapticsManager.shared.success()
@@ -792,45 +803,44 @@ private struct LetterPracticeCanvas: View {
         drawing = PKDrawing()
         currentStrokeIndex = 0
         previousCompletedCount = 0
+        previousCheckpointCount = 0
         didCompleteCurrentLetter = false
         warningMessage = nil
         lastWarningTime = nil
         lastAnalysis = nil
+        letterCelebrationToken &+= 1
+        let celebrationToken = letterCelebrationToken
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.75)) {
+            letterCelebrationVisible = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [celebrationToken] in
+            guard celebrationToken == letterCelebrationToken else { return }
+            withAnimation(.easeInOut(duration: 0.3)) {
+                letterCelebrationVisible = false
+            }
+        }
         onSuccessFeedback()
         onLetterComplete()
     }
 
-    private func animateLineAdvance(completion: @escaping () -> Void) {
-        let travelDistance = layout.width + layout.leadingInset * 2 + 60
-        withAnimation(.easeInOut(duration: 0.35)) {
-            slideOffset = -travelDistance
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.36) {
-            slideOffset = travelDistance
-            completion()
-            withAnimation(.easeInOut(duration: 0.35)) {
-                slideOffset = 0
-            }
-        }
-    }
 }
 
-private enum LetterStatus {
-    case completed
-    case current
-    case needsWork
-    case upcoming
-
-    var fillColor: Color {
-        switch self {
-        case .completed:
-            return Color(red: 0.45, green: 0.74, blue: 0.51)
-        case .current:
-            return Color(red: 1.0, green: 0.82, blue: 0.36)
-        case .needsWork:
-            return Color(red: 0.93, green: 0.43, blue: 0.39)
-        case .upcoming:
-            return Color(red: 0.8, green: 0.86, blue: 0.94)
+private struct LetterCelebrationOverlay: View {
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.08)
+            VStack(spacing: 12) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 60, weight: .bold))
+                    .foregroundStyle(Color(red: 0.36, green: 0.66, blue: 0.46))
+                    .shadow(color: Color.black.opacity(0.2), radius: 10, x: 0, y: 6)
+                Text("Letter Complete")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 8)
+                    .background(Color.black.opacity(0.35), in: Capsule())
+            }
         }
     }
 }
@@ -999,6 +1009,7 @@ private struct WordLayout {
     let height: CGFloat
     let scaledXHeight: CGFloat
     let leadingInset: CGFloat
+    let verticalInset: CGFloat
     let cacheKey: String
 
     init(items: [LetterTimelineItem],
@@ -1006,8 +1017,10 @@ private struct WordLayout {
          metrics: PracticeCanvasMetrics,
          isLeftHanded: Bool) {
         let availableWidth = max(availableWidth, 160)
+        let desiredInset = max(metrics.practiceLineWidth * 0.75, 18)
         let rowAscender = metrics.rowMetrics.ascender
         let rowDescender = metrics.rowMetrics.descender
+        let verticalInset = metrics.practiceLineWidth * 0.75
         let totalHeight = rowAscender + rowDescender
 
         let baseSpacing: CGFloat = rowAscender * 0.26
@@ -1080,14 +1093,23 @@ private struct WordLayout {
         let glyphWidthSum = rawWidths.reduce(0, +)
         let gapCount = max(descriptors.count - 1, 0)
         let minimalInnerWidth = glyphWidthSum + baseSpacing * spacingCount
-        let canvasWidth = max(availableWidth, minimalInnerWidth)
-        let leadingInsetValue: CGFloat = 0
-        let innerWidth = canvasWidth
-        var spacingBetweenSegments = baseSpacing
 
-        if gapCount > 0 && minimalInnerWidth < innerWidth {
-            let extra = innerWidth - minimalInnerWidth
-            spacingBetweenSegments = baseSpacing + extra / CGFloat(gapCount)
+        var leadingInsetValue = desiredInset
+        let minimalTotalWidth = minimalInnerWidth + leadingInsetValue * 2
+        if minimalTotalWidth > availableWidth {
+            let availableMargin = max(availableWidth - minimalInnerWidth, 0)
+            let adjustedInset = availableMargin / 2
+            leadingInsetValue = max(min(adjustedInset, desiredInset), 0)
+        }
+
+        let availableInnerWidth = max(availableWidth - leadingInsetValue * 2, 0)
+        let targetInnerWidth = max(minimalInnerWidth, availableInnerWidth)
+
+        var spacingBetweenSegments = baseSpacing
+        if gapCount > 0 && minimalInnerWidth < targetInnerWidth {
+            let extra = targetInnerWidth - minimalInnerWidth
+            let additionalPerGap = min(extra / CGFloat(gapCount), baseSpacing * 0.6)
+            spacingBetweenSegments = baseSpacing + additionalPerGap
         }
 
         var segments: [Segment] = []
@@ -1227,9 +1249,12 @@ private struct WordLayout {
         self.scaledXHeight = resolvedXHeight
         self.ascender = rowAscender
         self.descender = rowDescender
-        self.width = innerWidth
+        let contentWidth = max(cursor - leadingInsetValue, minimalInnerWidth)
+
+        self.width = contentWidth
         self.height = totalHeight
         self.leadingInset = leadingInsetValue
+        self.verticalInset = verticalInset
         self.cacheKey = "\(items.map { $0.character })|\(availableWidth)|\(rowAscender)|\(isLeftHanded)"
     }
 
