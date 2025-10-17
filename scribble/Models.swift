@@ -121,44 +121,52 @@ extension PracticeDifficulty {
 extension PracticeDifficultyProfile {
     func validationConfiguration(rowHeight: CGFloat,
                                   visualStartRadius: CGFloat,
-                                  userInkWidth: CGFloat) -> RasterStrokeValidator.Configuration {
-        let defaults = RasterValidationDefaults.configuration(for: self)
-        let tubeRadius = max(rowHeight * defaults.tubeFactor, RasterValidationDefaults.minimumTubeRadius)
-        let tubeLineWidth = tubeRadius * 2
-        let studentLineWidth = tubeLineWidth * defaults.studentWidthMultiplier
-        let startRadius = max(visualStartRadius,
-                              tubeRadius * RasterValidationDefaults.startZoneRadiusMultiplier)
+                                  userInkWidth _: CGFloat) -> CheckpointValidator.Configuration {
+        let defaults = CheckpointValidationDefaults.configuration(for: self)
+        let corridorRadius = max(rowHeight * defaults.corridorPct, CheckpointValidationDefaults.minimumCorridorRadius)
+        let studentLineWidth = corridorRadius * 2 * defaults.strokeWidthMultiplier
 
-        return RasterStrokeValidator.Configuration(rasterScale: RasterValidationDefaults.rasterScale,
-                                                   tubeLineWidth: tubeLineWidth,
-                                                   studentLineWidth: studentLineWidth,
-                                                   startRadius: startRadius,
-                                                   coverageThreshold: defaults.coverageThreshold)
+        return CheckpointValidator.Configuration(corridorRadius: corridorRadius,
+                                                 checkpointLength: defaults.checkpointLength,
+                                                 spacingLength: defaults.spacingLength,
+                                                 coverageThreshold: defaults.coverageThreshold,
+                                                 outsideAllowance: defaults.outsideAllowance,
+                                                 studentLineWidth: studentLineWidth)
     }
 }
 
-private enum RasterValidationDefaults {
+private enum CheckpointValidationDefaults {
     struct DifficultyConfiguration {
-        let tubeFactor: CGFloat
-        let studentWidthMultiplier: CGFloat
+        let corridorPct: CGFloat
+        let strokeWidthMultiplier: CGFloat
         let coverageThreshold: Double
+        let outsideAllowance: Double
+        let checkpointLength: CGFloat
+        let spacingLength: CGFloat
     }
 
-    static let rasterScale: CGFloat = 2
-    static let minimumTubeRadius: CGFloat = 3
-    static let startZoneRadiusMultiplier: CGFloat = 1.6
+    static let minimumCorridorRadius: CGFloat = 2
 
-    private static let beginner = DifficultyConfiguration(tubeFactor: 0.12,
-                                                          studentWidthMultiplier: 1.4,
-                                                          coverageThreshold: 0.9)
+    private static let beginner = DifficultyConfiguration(corridorPct: 0.12,
+                                                          strokeWidthMultiplier: 1.4,
+                                                          coverageThreshold: 0.85,
+                                                          outsideAllowance: 0.35,
+                                                          checkpointLength: 6,
+                                                          spacingLength: 6)
 
-    private static let intermediate = DifficultyConfiguration(tubeFactor: 0.085,
-                                                              studentWidthMultiplier: 1.2,
-                                                              coverageThreshold: 0.94)
+    private static let intermediate = DifficultyConfiguration(corridorPct: 0.08,
+                                                              strokeWidthMultiplier: 1.25,
+                                                              coverageThreshold: 0.9,
+                                                              outsideAllowance: 0.25,
+                                                              checkpointLength: 6,
+                                                              spacingLength: 6)
 
-    private static let expert = DifficultyConfiguration(tubeFactor: 0.05,
-                                                        studentWidthMultiplier: 1.1,
-                                                        coverageThreshold: 0.97)
+    private static let expert = DifficultyConfiguration(corridorPct: 0.045,
+                                                        strokeWidthMultiplier: 1.1,
+                                                        coverageThreshold: 0.95,
+                                                        outsideAllowance: 0.15,
+                                                        checkpointLength: 6,
+                                                        spacingLength: 6)
 
     static func configuration(for profile: PracticeDifficultyProfile) -> DifficultyConfiguration {
         switch profile.strokeSize {

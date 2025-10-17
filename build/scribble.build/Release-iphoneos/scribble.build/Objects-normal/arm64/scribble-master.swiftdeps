@@ -1,7 +1,7 @@
 version: "Apple Swift version 6.1.2 (swiftlang-6.1.2.1.2 clang-1700.0.13.5)"
 options: "6d2a9e5bd17a639035c97366d6984698ca180c443432f8d8a508e9900256d360"
-build_start_time: [1760712529, 42859000]
-build_end_time: [1760712541, 645920000]
+build_start_time: [1760715869, 159180000]
+build_end_time: [1760715881, 709800000]
 inputs:
   ? "/Users/mitchellwhite/Code/scribble/build/scribble.build/Release-iphoneos/scribble.build/DerivedSources/GeneratedAssetSymbols.swift"
   : [1760708280, 739587616]
@@ -13,7 +13,7 @@ inputs:
   "/Users/mitchellwhite/Code/scribble/scribble/HandwritingTemplate.swift": [1760567385, 416921359]
   "/Users/mitchellwhite/Code/scribble/scribble/HapticsManager.swift": [1760670332, 707676571]
   "/Users/mitchellwhite/Code/scribble/scribble/HomeView.swift": [1760673476, 811283013]
-  "/Users/mitchellwhite/Code/scribble/scribble/LessonPracticeView.swift": [1760712428, 191651960]
+  "/Users/mitchellwhite/Code/scribble/scribble/LessonPracticeView.swift": [1760715544, 336891108]
   "/Users/mitchellwhite/Code/scribble/scribble/Models.swift": [1760711434, 951587335]
   "/Users/mitchellwhite/Code/scribble/scribble/OnboardingFlowView.swift": [1760657263, 84569765]
   "/Users/mitchellwhite/Code/scribble/scribble/OrientationSupport.swift": [1760658893, 596130210]
@@ -23,7 +23,7 @@ inputs:
   "/Users/mitchellwhite/Code/scribble/scribble/PracticeRowGuides.swift": [1760640657, 741434637]
   "/Users/mitchellwhite/Code/scribble/scribble/ProfileCenterView.swift": [1760644266, 296206424]
   "/Users/mitchellwhite/Code/scribble/scribble/QuickDialogs.swift": [1760710253, 802509892]
-  "/Users/mitchellwhite/Code/scribble/scribble/RasterStrokeValidator.swift": [1760711699, 887465243]
+  "/Users/mitchellwhite/Code/scribble/scribble/RasterStrokeValidator.swift": [1760715852, 289576797]
   "/Users/mitchellwhite/Code/scribble/scribble/ScribbleComponents.swift": [1760637385, 179819892]
   "/Users/mitchellwhite/Code/scribble/scribble/ScribbleDesignSystem.swift": [1760637334, 289929587]
   "/Users/mitchellwhite/Code/scribble/scribble/SettingsView.swift": [1760637453, 918715161]

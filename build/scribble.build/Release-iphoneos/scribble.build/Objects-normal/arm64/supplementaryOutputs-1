@@ -1,9 +1,9 @@
-"/Users/mitchellwhite/Code/scribble/scribble/RasterStrokeValidator.swift":
-  swiftmodule: "/Users/mitchellwhite/Code/scribble/build/scribble.build/Release-iphoneos/scribble.build/Objects-normal/arm64/scribble.swiftmodule"
-  const-values: "/Users/mitchellwhite/Code/scribble/build/scribble.build/Release-iphoneos/scribble.build/Objects-normal/arm64/scribble-master.swiftconstvalues"
+"/Users/mitchellwhite/Code/scribble/scribble/HandwritingTemplate.swift":
   dependencies: "/Users/mitchellwhite/Code/scribble/build/scribble.build/Release-iphoneos/scribble.build/Objects-normal/arm64/scribble-master.d"
-  swiftsourceinfo: "/Users/mitchellwhite/Code/scribble/build/scribble.build/Release-iphoneos/scribble.build/Objects-normal/arm64/scribble.swiftsourceinfo"
-  abi-baseline-json: "/Users/mitchellwhite/Code/scribble/build/scribble.build/Release-iphoneos/scribble.build/Objects-normal/arm64/scribble.abi.json"
   diagnostics: "/Users/mitchellwhite/Code/scribble/build/scribble.build/Release-iphoneos/scribble.build/Objects-normal/arm64/scribble-master.dia"
+  swiftmodule: "/Users/mitchellwhite/Code/scribble/build/scribble.build/Release-iphoneos/scribble.build/Objects-normal/arm64/scribble.swiftmodule"
+  abi-baseline-json: "/Users/mitchellwhite/Code/scribble/build/scribble.build/Release-iphoneos/scribble.build/Objects-normal/arm64/scribble.abi.json"
+  swiftsourceinfo: "/Users/mitchellwhite/Code/scribble/build/scribble.build/Release-iphoneos/scribble.build/Objects-normal/arm64/scribble.swiftsourceinfo"
   objc-header: "/Users/mitchellwhite/Code/scribble/build/scribble.build/Release-iphoneos/scribble.build/Objects-normal/arm64/scribble-Swift.h"
+  const-values: "/Users/mitchellwhite/Code/scribble/build/scribble.build/Release-iphoneos/scribble.build/Objects-normal/arm64/scribble-master.swiftconstvalues"
   swiftdoc: "/Users/mitchellwhite/Code/scribble/build/scribble.build/Release-iphoneos/scribble.build/Objects-normal/arm64/scribble.swiftdoc"
