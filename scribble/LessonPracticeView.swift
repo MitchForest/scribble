@@ -272,9 +272,9 @@ private struct LessonPracticeBoard: View {
 
                 if let bubble = feedback,
                    let segment = layout.segments[safe: viewModel.currentLetterIndex] {
-                    let referenceTop = layout.ascender - layout.scaledXHeight
-                    let letterTop = segment.strokeBounds?.minY ?? referenceTop
-                    let bubbleY = max(letterTop - 42, 16)
+                    let baselineY = layout.ascender
+                    let bubbleYUpperBound = layout.ascender + layout.descender - 32
+                    let bubbleY = min(max(baselineY - 28, 32), bubbleYUpperBound)
                     FeedbackBubbleView(message: bubble)
                         .position(x: segment.frame.midX, y: bubbleY)
                 }
@@ -456,15 +456,28 @@ private struct ReferenceLineView: View {
             return
         }
         strokeProgress = Array(repeating: 0, count: strokes.count)
-        for index in strokes.indices {
-            let delay = 0.25 * Double(index)
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                withAnimation(.linear(duration: 0.6)) {
+        let generation = animationToken
+        let secondsPerPoint: Double = 0.002
+        let minimumDuration: Double = 0.45
+        let maximumDuration: Double = 1.35
+        let gapDuration: Double = 0.15
+        var cumulativeDelay: Double = 0
+
+        for (index, stroke) in strokes.enumerated() {
+            let rawDuration = Double(stroke.length) * secondsPerPoint
+            let duration = max(minimumDuration, min(maximumDuration, rawDuration.isFinite ? rawDuration : minimumDuration))
+            let localDelay = cumulativeDelay
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + localDelay) {
+                guard generation == animationToken else { return }
+                withAnimation(.linear(duration: duration)) {
                     if index < strokeProgress.count {
                         strokeProgress[index] = 1
                     }
                 }
             }
+
+            cumulativeDelay += duration + gapDuration
         }
     }
 }
@@ -495,6 +508,7 @@ private struct LetterPracticeCanvas: View {
     @State private var didCompleteCurrentLetter = false
     @State private var slideOffset: CGFloat = 0
     @State private var lastAnalysis: CheckpointValidator.Result?
+    @State private var activeStrokeSamples: [CanvasStrokeSample] = []
 
     private var profile: PracticeDifficultyProfile {
         difficulty.profile
@@ -549,7 +563,20 @@ private struct LetterPracticeCanvas: View {
 
             PencilCanvasView(drawing: $drawing,
                              onDrawingChanged: { updated in
-                                 processDrawingChange(updated)
+                                 processDrawingChange(updated, activeSamples: activeStrokeSamples)
+                             },
+                             onLiveStrokeSample: { sample in
+                                 if let last = activeStrokeSamples.last,
+                                    last.timestamp == sample.timestamp,
+                                    last.location == sample.location {
+                                     return
+                                 }
+                                 activeStrokeSamples.append(sample)
+                                 processDrawingChange(drawing, activeSamples: activeStrokeSamples)
+                             },
+                             onLiveStrokeDidEnd: {
+                                 activeStrokeSamples.removeAll()
+                                 processDrawingChange(drawing, activeSamples: activeStrokeSamples)
                              },
                              allowFingerFallback: allowFingerInput,
                              lineWidth: validationConfiguration.studentLineWidth)
@@ -604,6 +631,7 @@ private struct LetterPracticeCanvas: View {
         didCompleteCurrentLetter = false
         slideOffset = 0
         lastAnalysis = nil
+        activeStrokeSamples = []
     }
 
     private func restartCurrentAttempt(clearCompleted: Bool = false) {
@@ -618,9 +646,11 @@ private struct LetterPracticeCanvas: View {
         didCompleteCurrentLetter = false
         slideOffset = 0
         lastAnalysis = nil
+        activeStrokeSamples = []
     }
 
-    private func processDrawingChange(_ updated: PKDrawing) {
+    private func processDrawingChange(_ updated: PKDrawing,
+                                      activeSamples: [CanvasStrokeSample] = []) {
         guard let segment = currentSegment else {
             drawing = PKDrawing()
             currentStrokeIndex = 0
@@ -628,12 +658,13 @@ private struct LetterPracticeCanvas: View {
             didCompleteCurrentLetter = false
             warningMessage = nil
             slideOffset = 0
+            activeStrokeSamples = []
             return
         }
 
         drawing = updated
 
-        guard !updated.strokes.isEmpty else {
+        if updated.strokes.isEmpty && activeSamples.isEmpty {
             currentStrokeIndex = 0
             previousCompletedCount = 0
             didCompleteCurrentLetter = false
@@ -643,9 +674,13 @@ private struct LetterPracticeCanvas: View {
         }
 
         let template = makeTraceTemplate(for: segment)
+        let liveSamples = activeSamples.map {
+            CheckpointValidator.LiveSample(location: $0.location, timestamp: $0.timestamp)
+        }
         let analysis = CheckpointValidator.evaluate(drawing: updated,
                                                     template: template,
-                                                    configuration: validationConfiguration)
+                                                    configuration: validationConfiguration,
+                                                    liveStrokeSamples: liveSamples)
         lastAnalysis = analysis
 
         #if DEBUG
@@ -943,7 +978,6 @@ private struct WordGuidesOverlay: View {
         }
     }
 }
-}
 
 private struct WordLayout {
     struct Segment: Identifiable {
@@ -1230,6 +1264,7 @@ private struct WordLayout {
         let startPoint: CGPoint
         let endPoint: CGPoint
         let checkpointSegments: [CheckpointSegment]
+        let length: CGFloat
 
         struct CheckpointSegment {
             let index: Int
@@ -1251,6 +1286,7 @@ private struct WordLayout {
             self.startPoint = startPoint
             self.endPoint = endPoint
             self.checkpointSegments = checkpointSegments
+            self.length = ScaledStroke.computeLength(points: points)
         }
 
         var arrowAngle: Angle {
@@ -1267,6 +1303,17 @@ private struct WordLayout {
 
         var isLoop: Bool {
             hypot(endPoint.x - startPoint.x, endPoint.y - startPoint.y) < 1
+        }
+
+        private static func computeLength(points: [CGPoint]) -> CGFloat {
+            guard points.count > 1 else { return 0 }
+            var total: CGFloat = 0
+            for index in 0..<(points.count - 1) {
+                let a = points[index]
+                let b = points[index + 1]
+                total += hypot(b.x - a.x, b.y - a.y)
+            }
+            return total
         }
     }
 }

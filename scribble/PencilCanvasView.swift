@@ -1,9 +1,12 @@
 import SwiftUI
 import PencilKit
+import Foundation
 
 struct PencilCanvasView: UIViewRepresentable {
     @Binding var drawing: PKDrawing
     var onDrawingChanged: (PKDrawing) -> Void
+    var onLiveStrokeSample: ((CanvasStrokeSample) -> Void)? = nil
+    var onLiveStrokeDidEnd: (() -> Void)? = nil
     var allowFingerFallback: Bool = false
     var lineWidth: CGFloat = 6
 
@@ -11,6 +14,7 @@ struct PencilCanvasView: UIViewRepresentable {
         let view = PKCanvasView()
         view.drawing = drawing
         view.delegate = context.coordinator
+        context.coordinator.attach(to: view)
         view.backgroundColor = .clear
         view.alwaysBounceVertical = false
         view.alwaysBounceHorizontal = false
@@ -76,6 +80,8 @@ struct PencilCanvasView: UIViewRepresentable {
         } else {
             uiView.tool = PKInkingTool(.pen, color: .label, width: lineWidth)
         }
+
+        context.coordinator.attach(to: uiView)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -84,16 +90,70 @@ struct PencilCanvasView: UIViewRepresentable {
 
     final class Coordinator: NSObject, PKCanvasViewDelegate {
         private let parent: PencilCanvasView
+        private weak var observedCanvasView: PKCanvasView?
 
         init(parent: PencilCanvasView) {
             self.parent = parent
         }
 
+        func attach(to canvasView: PKCanvasView) {
+            if observedCanvasView !== canvasView {
+                observedCanvasView?.drawingGestureRecognizer.removeTarget(self,
+                                                                          action: #selector(handleDrawingGesture(_:)))
+                observedCanvasView = canvasView
+                canvasView.drawingGestureRecognizer.addTarget(self,
+                                                              action: #selector(handleDrawingGesture(_:)))
+            }
+        }
+
+        deinit {
+            observedCanvasView?.drawingGestureRecognizer.removeTarget(self,
+                                                                      action: #selector(handleDrawingGesture(_:)))
+        }
+
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
             let updatedDrawing = canvasView.drawing
-            DispatchQueue.main.async { [parent, updatedDrawing] in
-                parent.drawing = updatedDrawing
-                parent.onDrawingChanged(updatedDrawing)
+            DispatchQueue.main.async { [weak self, canvasView, updatedDrawing] in
+                guard let self else { return }
+                self.parent.drawing = updatedDrawing
+                self.parent.onDrawingChanged(updatedDrawing)
+                self.emitLiveSample(from: canvasView)
+            }
+        }
+
+        func canvasViewDidBeginUsingTool(_ canvasView: PKCanvasView) {
+            DispatchQueue.main.async { [weak self, canvasView] in
+                self?.emitLiveSample(from: canvasView)
+            }
+        }
+
+        func canvasViewDidEndUsingTool(_ canvasView: PKCanvasView) {
+            DispatchQueue.main.async { [parent = parent] in
+                parent.onLiveStrokeDidEnd?()
+            }
+        }
+
+        @objc private func handleDrawingGesture(_ recognizer: UIGestureRecognizer) {
+            guard let canvasView = observedCanvasView else { return }
+            switch recognizer.state {
+            case .began, .changed:
+                emitLiveSample(from: canvasView)
+            case .ended, .cancelled, .failed:
+                DispatchQueue.main.async { [parent = parent] in
+                    parent.onLiveStrokeDidEnd?()
+                }
+            default:
+                break
+            }
+        }
+
+        private func emitLiveSample(from canvasView: PKCanvasView) {
+            guard let handler = parent.onLiveStrokeSample else { return }
+            let gesture = canvasView.drawingGestureRecognizer
+            if gesture.state == .began || gesture.state == .changed {
+                let location = gesture.location(in: canvasView)
+                let timestamp = Date().timeIntervalSinceReferenceDate
+                handler(CanvasStrokeSample(location: location, timestamp: timestamp))
             }
         }
     }

@@ -41,9 +41,15 @@ struct CheckpointValidator {
         let studentLineWidth: CGFloat
     }
 
+    struct LiveSample {
+        let location: CGPoint
+        let timestamp: TimeInterval
+    }
+
     static func evaluate(drawing: PKDrawing,
                          template: StrokeTraceTemplate,
-                         configuration: Configuration) -> Result {
+                         configuration: Configuration,
+                         liveStrokeSamples: [LiveSample] = []) -> Result {
         let plan = TraceCheckpointPlan.make(template: template,
                                             checkpointLength: configuration.checkpointLength,
                                             spacing: configuration.spacingLength)
@@ -71,7 +77,8 @@ struct CheckpointValidator {
         var failure: FailureReason?
         var failureCheckpointIndex: Int?
 
-        let samples = flattenedSamples(from: drawing)
+        let samples = combinedSamples(committed: flattenedSamples(from: drawing),
+                                      live: liveStrokeSamples)
 
         outer: for sample in samples {
             guard failure == nil else { break }
@@ -96,21 +103,18 @@ struct CheckpointValidator {
                 }
             }
 
-            // Step 2: detect out-of-order interactions.
+            // Step 2: detect genuinely out-of-order interactions.
             if let nearest = nearestPath(for: sample.location, in: plan.paths),
                nearest.projection.distance <= configuration.corridorRadius,
                let checkpointLocalIndex = plan.paths[nearest.index].checkpointIndex(for: nearest.projection.progress) {
                 let globalCheckpoint = plan.paths[nearest.index].checkpoints[checkpointLocalIndex].globalIndex
                 if globalCheckpoint > nextCheckpointIndex {
-                    if globalCheckpoint >= nextCheckpointIndex {
-                        if globalCheckpoint > nextCheckpointIndex {
-                            failure = .outOfOrder
-                            failureCheckpointIndex = globalCheckpoint
-                            break outer
-                        } else {
-                            // Touching the current checkpoint again is fine.
-                            continue
-                        }
+                    // Only guard against genuine order violations. If the pen is brushing a future stroke,
+                    // we simply ignore that contact so the student can finish the active path without a reset.
+                    // The next checkpoint cannot advance until we return to the active path anyway.
+                    let currentPathIndex = nextCheckpointIndex < descriptors.count ? descriptors[nextCheckpointIndex].pathIndex : nil
+                    if let currentPathIndex, nearest.index != currentPathIndex {
+                        continue
                     }
                 }
             }
@@ -167,6 +171,18 @@ private extension CheckpointValidator {
             }
         }
         return results.sorted { $0.timestamp < $1.timestamp }
+    }
+
+    static func combinedSamples(committed: [Sample],
+                                live: [CheckpointValidator.LiveSample]) -> [Sample] {
+        guard !live.isEmpty else { return committed }
+        var combined = committed
+        combined.reserveCapacity(committed.count + live.count)
+        for sample in live {
+            combined.append(Sample(location: sample.location, timestamp: sample.timestamp))
+        }
+        combined.sort { $0.timestamp < $1.timestamp }
+        return combined
     }
 
     static func nearestPath(for point: CGPoint,
