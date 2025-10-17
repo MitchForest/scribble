@@ -79,6 +79,24 @@ final class FreePracticeViewModel: ObservableObject {
         currentLetterIndex = min(timeline.count - 1, currentLetterIndex)
     }
 
+    func resetProgress() {
+        for index in letterStates.indices {
+            var state = letterStates[index]
+            state.hadWarning = false
+            if timeline[safe: index]?.isPractiseable == true {
+                state.isComplete = false
+            } else {
+                state.isComplete = true
+            }
+            letterStates[index] = state
+        }
+        if let first = practiseableIndices.first {
+            currentLetterIndex = first
+        } else {
+            currentLetterIndex = 0
+        }
+    }
+
     func resumeIfNeeded() {
         if timeline.isEmpty {
             scheduleTimelineUpdate()

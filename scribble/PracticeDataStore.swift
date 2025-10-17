@@ -3,7 +3,7 @@ import Foundation
 @MainActor
 final class PracticeDataStore: ObservableObject {
     static let focusLetters: [String] = {
-        let alphabet = Array("abcdefghijklmnopqrstuvwx")
+        let alphabet = Array("abcdefghijklmnopqrstuvwxyz")
         let lowers = alphabet.map { "\($0).lower" }
         let uppers = alphabet.map { "\($0).upper" }
         return lowers + uppers
@@ -155,6 +155,13 @@ final class PracticeDataStore: ObservableObject {
         record.completedLetters = clampedCompleted
         record.updatedAt = updatedAt
         lessonProgressRecords[lesson.id] = record
+        saveSnapshot()
+    }
+
+    func resetLessonProgress(for lesson: PracticeLesson, updatedAt: Date = Date()) {
+        lessonProgressRecords[lesson.id] = LessonProgressRecord(lessonId: lesson.id,
+                                                                completedLetters: 0,
+                                                                updatedAt: updatedAt)
         saveSnapshot()
     }
 

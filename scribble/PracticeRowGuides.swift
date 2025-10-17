@@ -25,27 +25,28 @@ struct PracticeRowGuides: View {
             let midLine = drawLine(xHeightY)
             let baseline = drawLine(baselineY)
 
-            let primaryBlue = Color(red: 0.32, green: 0.53, blue: 0.88)
-            let baselineColor = Color(red: 0.16, green: 0.38, blue: 0.72)
-            let midlineRed = Color(red: 0.85, green: 0.36, blue: 0.4)
+            let guideColor = Color(red: 0.32, green: 0.53, blue: 0.88)
+            let midlineRed = Color(red: 0.87, green: 0.50, blue: 0.52)
 
-            let topWidth = max(1, guideLineWidth * 0.75)
-            let baseWidth = max(1.2, guideLineWidth)
-            let dashWidth = max(1, guideLineWidth * 0.5)
+            let primaryWidth = max(1, guideLineWidth * 0.72)
+            let dashWidth = max(0.6, guideLineWidth * 0.32)
+
+            let topColor = guideColor.opacity(0.78)
+            let baselineColor = guideColor.opacity(0.78)
 
             context.stroke(topLine,
-                           with: .color(primaryBlue.opacity(0.85)),
-                           lineWidth: topWidth)
+                           with: .color(topColor),
+                           lineWidth: primaryWidth)
 
             context.stroke(baseline,
                            with: .color(baselineColor),
-                           lineWidth: baseWidth)
+                           lineWidth: primaryWidth)
 
             let dashStyle = StrokeStyle(lineWidth: dashWidth,
                                         lineCap: .round,
-                                        dash: [6, 8])
+                                        dash: [6, 10])
             context.stroke(midLine,
-                           with: .color(midlineRed.opacity(0.9)),
+                           with: .color(midlineRed.opacity(0.55)),
                            style: dashStyle)
         }
         .frame(width: width, height: ascender + descender)

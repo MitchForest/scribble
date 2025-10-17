@@ -97,6 +97,7 @@ enum HandwritingTemplateLoader {
     private static let cacheLock = NSLock()
 
     static func loadTemplate(for letterId: String) throws -> HandwritingTemplate {
+        // Return cached template if available.
         cacheLock.lock()
         if let cached = cache[letterId] {
             cacheLock.unlock()
@@ -104,25 +105,43 @@ enum HandwritingTemplateLoader {
         }
         cacheLock.unlock()
 
-        let bundle = Bundle.main
         let subdirectory = templateSubdirectory(for: letterId)
         let filename = "\(letterId).json"
+        var attemptedURLs: [URL] = []
 
-        guard let url = bundle.url(forResource: filename,
-                                   withExtension: nil,
-                                   subdirectory: "\(baseDirectory)/templates/\(subdirectory)") else {
+        if let primaryURL = Bundle.main.url(forResource: filename,
+                                            withExtension: nil,
+                                            subdirectory: "\(baseDirectory)/templates/\(subdirectory)") {
+            attemptedURLs.append(primaryURL)
+        }
+
+        if let fallbackURL = developerAssetURL(for: filename, subdirectory: subdirectory) {
+            attemptedURLs.append(fallbackURL)
+        }
+
+        var lastError: Error?
+
+        for url in attemptedURLs {
+            do {
+                let template = try decodeTemplate(from: url)
+                cacheLock.lock()
+                cache[letterId] = template
+                cacheLock.unlock()
+                return template
+            } catch {
+                lastError = error
+            }
+        }
+
+        if attemptedURLs.isEmpty {
             throw TemplateLoaderError.resourceMissing("Missing template for \(letterId)")
         }
 
-        do {
-            let template = try decodeTemplate(from: url)
-            cacheLock.lock()
-            cache[letterId] = template
-            cacheLock.unlock()
-            return template
-        } catch {
+        if let error = lastError {
             throw TemplateLoaderError.decodeFailed("Failed to decode template \(letterId): \(error)")
         }
+
+        throw TemplateLoaderError.decodeFailed("Failed to decode template \(letterId)")
     }
 
     static func decodeTemplate(from url: URL) throws -> HandwritingTemplate {
@@ -150,5 +169,30 @@ enum HandwritingTemplateLoader {
         } else {
             return ""
         }
+    }
+
+    private static func developerAssetURL(for filename: String,
+                                          subdirectory: String) -> URL? {
+        guard let srcRoot = ProcessInfo.processInfo.environment["SRCROOT"] else {
+            return nil
+        }
+
+        var url = URL(fileURLWithPath: srcRoot)
+            .appendingPathComponent("scribble")
+            .appendingPathComponent(baseDirectory)
+            .appendingPathComponent("templates")
+
+        if !subdirectory.isEmpty {
+            url.appendPathComponent(subdirectory)
+        }
+
+        url.appendPathComponent(filename)
+
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: url.path) else {
+            return nil
+        }
+
+        return url
     }
 }

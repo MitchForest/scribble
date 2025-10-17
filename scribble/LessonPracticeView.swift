@@ -8,6 +8,8 @@ struct LessonPracticeView: View {
     @State private var dialogInitialTab: ProfileQuickActionsDialog.Tab = .today
     @State private var currentIndex: Int
     @State private var boardKey = UUID()
+    @State private var boardDirection: BoardTransitionDirection = .forward
+    @State private var clearToken = 0
 
     private let lessons: [PracticeLesson]
 
@@ -19,6 +21,11 @@ struct LessonPracticeView: View {
         _currentIndex = State(initialValue: startIndex)
     }
 
+    private enum BoardTransitionDirection {
+        case forward
+        case backward
+    }
+
     private var currentLesson: PracticeLesson {
         lessons[currentIndex]
     }
@@ -26,6 +33,30 @@ struct LessonPracticeView: View {
     private var nextLessonIndex: Int {
         guard !lessons.isEmpty else { return 0 }
         return (currentIndex + 1) % lessons.count
+    }
+
+    private var hasMultipleLessons: Bool {
+        lessons.count > 1
+    }
+
+    private var canNavigateBackward: Bool {
+        currentIndex > 0
+    }
+
+    private var canNavigateForward: Bool {
+        guard lessons.count > 0 else { return false }
+        return currentIndex < lessons.count - 1
+    }
+
+    private var boardTransition: AnyTransition {
+        switch boardDirection {
+        case .forward:
+            return .asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity),
+                               removal: .move(edge: .leading).combined(with: .opacity))
+        case .backward:
+            return .asymmetric(insertion: .move(edge: .leading).combined(with: .opacity),
+                               removal: .move(edge: .trailing).combined(with: .opacity))
+        }
     }
 
     private var streak: Int {
@@ -65,6 +96,12 @@ struct LessonPracticeView: View {
                     .foregroundStyle(Color(red: 0.24, green: 0.33, blue: 0.57))
             }
             Spacer()
+            LessonNavigationDock(canGoBackward: canNavigateBackward,
+                                 canGoForward: canNavigateForward,
+                                 onBackward: navigateToPreviousLesson,
+                                 onClear: clearCurrentLessonProgress,
+                                 onForward: navigateToNextLesson)
+            Spacer(minLength: 16)
             HStack(spacing: 16) {
                 StreakBadge(streak: streak) {
                     withAnimation(.easeInOut(duration: 0.25)) {
@@ -89,6 +126,7 @@ struct LessonPracticeView: View {
             LessonPracticeBoard(lesson: currentLesson,
                                 settings: dataStore.settings,
                                 allowFingerInput: dataStore.settings.inputPreference.allowsFingerInput,
+                                clearTrigger: clearToken,
                                 onLetterAward: { award in
                                     recordLetterXP(for: award)
                                 },
@@ -101,18 +139,48 @@ struct LessonPracticeView: View {
                                     advanceToNextLesson()
                                 })
             .id(boardKey)
-            .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity),
-                                    removal: .move(edge: .leading).combined(with: .opacity)))
+            .transition(boardTransition)
         }
         .animation(.easeInOut(duration: 0.45), value: boardKey)
     }
 
-    private func advanceToNextLesson() {
-        guard !lessons.isEmpty else { return }
-        withAnimation(.easeInOut(duration: 0.45)) {
-            currentIndex = nextLessonIndex
+    private func navigateToLesson(at index: Int,
+                                  direction: BoardTransitionDirection,
+                                  animated: Bool = true) {
+        guard lessons.indices.contains(index) else { return }
+        boardDirection = direction
+        let updates = {
+            currentIndex = index
             boardKey = UUID()
         }
+        if animated {
+            withAnimation(.easeInOut(duration: 0.45)) {
+                updates()
+            }
+        } else {
+            updates()
+        }
+    }
+
+    private func navigateToPreviousLesson() {
+        guard canNavigateBackward else { return }
+        navigateToLesson(at: currentIndex - 1, direction: .backward)
+    }
+
+    private func navigateToNextLesson() {
+        guard canNavigateForward else { return }
+        navigateToLesson(at: currentIndex + 1, direction: .forward)
+    }
+
+    private func clearCurrentLessonProgress() {
+        guard !lessons.isEmpty else { return }
+        dataStore.resetLessonProgress(for: currentLesson)
+        clearToken &+= 1
+    }
+
+    private func advanceToNextLesson() {
+        guard !lessons.isEmpty else { return }
+        navigateToLesson(at: nextLessonIndex, direction: .forward)
     }
 
     private func recordLetterXP(for letter: LetterTimelineItem) {
@@ -178,12 +246,80 @@ private struct StreakBadge: View {
     }
 }
 
+private struct LessonNavigationDock: View {
+    let canGoBackward: Bool
+    let canGoForward: Bool
+    let onBackward: () -> Void
+    let onClear: () -> Void
+    let onForward: () -> Void
+
+    var body: some View {
+        HStack(spacing: 16) {
+            controlButton(systemName: "chevron.left",
+                          accessibilityLabel: "Previous lesson",
+                          isEnabled: canGoBackward,
+                          tint: ScribbleColors.primary,
+                          action: onBackward)
+
+            controlButton(systemName: "eraser",
+                          accessibilityLabel: "Clear current practice",
+                          tint: ScribbleColors.accentDark,
+                          background: ScribbleColors.accent.opacity(0.18),
+                          action: onClear)
+
+            controlButton(systemName: "chevron.right",
+                          accessibilityLabel: "Next lesson",
+                          isEnabled: canGoForward,
+                          tint: ScribbleColors.primary,
+                          action: onForward)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 32, style: .continuous)
+                .fill(Color.white.opacity(0.92))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 32, style: .continuous)
+                .stroke(Color.white.opacity(0.45), lineWidth: 1.5)
+        )
+        .shadow(color: Color.black.opacity(0.12), radius: 14, x: 0, y: 8)
+    }
+
+    private func controlButton(systemName: String,
+                               accessibilityLabel: String,
+                               isEnabled: Bool = true,
+                               tint: Color,
+                               background: Color = Color.white.opacity(0.95),
+                               action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(tint.opacity(isEnabled ? 1.0 : 0.45))
+                .frame(width: 48, height: 48)
+                .background(
+                    Circle()
+                        .fill(isEnabled ? background : ScribbleColors.controlDisabled.opacity(0.85))
+                )
+                .overlay(
+                    Circle()
+                        .stroke(Color.white.opacity(isEnabled ? 0.65 : 0.45), lineWidth: 1.2)
+                )
+        }
+        .buttonStyle(.plain)
+        .opacity(isEnabled ? 1.0 : 0.55)
+        .disabled(!isEnabled)
+        .accessibilityLabel(accessibilityLabel)
+    }
+}
+
 // MARK: - Practice Board
 
 private struct LessonPracticeBoard: View {
     let lesson: PracticeLesson
     let settings: UserSettings
     let allowFingerInput: Bool
+    let clearTrigger: Int
     let onLetterAward: (LetterTimelineItem) -> Void
     let onProgressChanged: (Int, Int) -> Void
     let onLessonComplete: () -> Void
@@ -194,15 +330,18 @@ private struct LessonPracticeBoard: View {
     @State private var completionGuard = false
     @State private var resetToken = 0
 
+
     init(lesson: PracticeLesson,
          settings: UserSettings,
          allowFingerInput: Bool,
+         clearTrigger: Int,
          onLetterAward: @escaping (LetterTimelineItem) -> Void,
          onProgressChanged: @escaping (Int, Int) -> Void,
          onLessonComplete: @escaping () -> Void) {
         self.lesson = lesson
         self.settings = settings
         self.allowFingerInput = allowFingerInput
+        self.clearTrigger = clearTrigger
         self.onLetterAward = onLetterAward
         self.onProgressChanged = onProgressChanged
         self.onLessonComplete = onLessonComplete
@@ -222,7 +361,7 @@ private struct LessonPracticeBoard: View {
                                     isLeftHanded: settings.isLeftHanded)
 
             ZStack(alignment: .top) {
-                VStack(spacing: 18) {
+                VStack(alignment: .center, spacing: max(layout.height * 0.18, 14)) {
                     ReferenceLineView(layout: layout,
                                       currentIndex: viewModel.currentLetterIndex,
                                       animationToken: animationToken,
@@ -237,6 +376,10 @@ private struct LessonPracticeBoard: View {
                                           animationToken &+= 1
                                           resetToken &+= 1
                                       })
+                    .frame(height: layout.height + layout.verticalInset * 2)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, layout.leadingInset)
+                    .layoutPriority(1)
 
                     LetterPracticeCanvas(layout: layout,
                                          metrics: metrics,
@@ -246,6 +389,7 @@ private struct LessonPracticeBoard: View {
                                          difficulty: settings.difficulty,
                                          hapticsEnabled: settings.hapticsEnabled,
                                          allowFingerInput: allowFingerInput,
+                                         segment: layout.segments[safe: viewModel.currentLetterIndex],
                                          onWarning: {
                                              viewModel.markWarningForCurrentLetter()
                                          },
@@ -265,6 +409,8 @@ private struct LessonPracticeBoard: View {
                                          onRetryFeedback: { showRetryFeedback() })
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .padding(.top, 18)
+                .padding(.bottom, 24)
                 .onChange(of: viewModel.targetText) { _, _ in
                     feedback = nil
                     resetToken &+= 1
@@ -293,6 +439,9 @@ private struct LessonPracticeBoard: View {
             animationToken &+= 1
             completionGuard = false
         }
+        .onChange(of: clearTrigger) { _, _ in
+            handleClear()
+        }
     }
 
     private func triggerLessonCompletion() {
@@ -301,6 +450,15 @@ private struct LessonPracticeBoard: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
             onLessonComplete()
         }
+    }
+
+    private func handleClear() {
+        feedback = nil
+        completionGuard = false
+        viewModel.resetProgress()
+        animationToken &+= 1
+        resetToken &+= 1
+        onProgressChanged(0, viewModel.totalPractiseableLetters)
     }
 
     private func showSuccessFeedback() {
@@ -473,6 +631,7 @@ private struct LetterPracticeCanvas: View {
     let difficulty: PracticeDifficulty
     let hapticsEnabled: Bool
     let allowFingerInput: Bool
+    let segment: WordLayout.Segment?
     let onWarning: () -> Void
     let onStrokeValidated: (Int, Int) -> Void
     let onLetterComplete: () -> Void
@@ -515,7 +674,7 @@ private struct LetterPracticeCanvas: View {
     }
 
     private var currentSegment: WordLayout.Segment? {
-        layout.segments[safe: currentIndex]
+        segment ?? layout.segments[safe: currentIndex]
     }
 
     var body: some View {
@@ -670,14 +829,22 @@ private struct LetterPracticeCanvas: View {
         }
 
         let template = makeTraceTemplate(for: segment)
+        let usesPrecomputedPlan = abs(validationConfiguration.checkpointLength - WordLayout.checkpointLength) < .ulpOfOne &&
+            abs(validationConfiguration.spacingLength - WordLayout.checkpointSpacing) < .ulpOfOne
+        let precomputedPlan = usesPrecomputedPlan ? segment.checkpointPlan : nil
         let liveSamples = activeSamples.map {
             CheckpointValidator.LiveSample(location: $0.location, timestamp: $0.timestamp)
         }
         let analysis = CheckpointValidator.evaluate(drawing: updated,
                                                     template: template,
                                                     configuration: validationConfiguration,
-                                                    liveStrokeSamples: liveSamples)
+                                                    liveStrokeSamples: liveSamples,
+                                                    precomputedPlan: precomputedPlan)
         lastAnalysis = analysis
+
+#if DEBUG
+        print("segment index: \(segment.index) checkpoints: \(analysis.totalCheckpointCount) next: \(analysis.activeCheckpointIndex)")
+#endif
 
         let completedCheckpointCount = analysis.completedCheckpointCount
         if completedCheckpointCount > previousCheckpointCount {
@@ -999,7 +1166,18 @@ private struct WordLayout {
         let lineWidth: CGFloat
         let strokeBounds: CGRect?
         let totalCheckpointCount: Int
+        let checkpoints: [ScaledStroke.CheckpointDescriptor]
+        let checkpointPlan: TraceCheckpointPlan?
+
         var isPractiseable: Bool { item.isPractiseable && !strokes.isEmpty }
+
+        var checkpointDescriptors: [ScaledStroke.CheckpointDescriptor] {
+            checkpoints
+        }
+
+        var checkpointSegments: [ScaledStroke.CheckpointSegment] {
+            strokes.flatMap { $0.checkpointSegments }
+        }
     }
 
     let segments: [Segment]
@@ -1128,7 +1306,9 @@ private struct WordLayout {
                                         frame: frame,
                                         lineWidth: descriptor.lineWidth,
                                         strokeBounds: nil,
-                                        totalCheckpointCount: 0))
+                                        totalCheckpointCount: 0,
+                                        checkpoints: [],
+                                        checkpointPlan: nil))
             } else {
                 let horizontalScale = descriptor.baseScale
                 let minX = descriptor.minX
@@ -1216,22 +1396,33 @@ private struct WordLayout {
                                                        startProgress: $0.startProgress,
                                                        endProgress: $0.endProgress)
                     }
+                    let descriptors = checkpointPlan.paths[pathIndex].checkpoints.map {
+                        ScaledStroke.CheckpointDescriptor(globalIndex: $0.globalIndex,
+                                                          pathIndex: pathIndex,
+                                                          startProgress: $0.startProgress,
+                                                          endProgress: $0.endProgress,
+                                                          length: $0.length)
+                    }
                     scaledStrokes.append(ScaledStroke(id: blueprint.id,
                                                       order: blueprint.order,
                                                       path: blueprint.path,
                                                       points: blueprint.points,
                                                       startPoint: blueprint.startPoint,
                                                       endPoint: blueprint.endPoint,
-                                                      checkpointSegments: checkpoints))
+                                                      checkpointSegments: checkpoints,
+                                                      checkpoints: descriptors))
                 }
 
+                let aggregatedCheckpoints = scaledStrokes.flatMap { $0.checkpoints }
                 segments.append(Segment(index: index,
                                         item: descriptor.item,
                                         strokes: scaledStrokes,
                                         frame: segmentFrame,
                                         lineWidth: descriptor.lineWidth,
                                         strokeBounds: unionBounds,
-                                        totalCheckpointCount: checkpointPlan.totalCheckpointCount))
+                                        totalCheckpointCount: checkpointPlan.totalCheckpointCount,
+                                        checkpoints: aggregatedCheckpoints,
+                                        checkpointPlan: checkpointPlan))
             }
             cursor += segmentWidth
             if index < descriptors.count - 1 {
@@ -1289,6 +1480,7 @@ private struct WordLayout {
         let startPoint: CGPoint
         let endPoint: CGPoint
         let checkpointSegments: [CheckpointSegment]
+        let checkpoints: [CheckpointDescriptor]
         let length: CGFloat
 
         struct CheckpointSegment {
@@ -1297,13 +1489,22 @@ private struct WordLayout {
             let endProgress: CGFloat
         }
 
+        struct CheckpointDescriptor {
+            let globalIndex: Int
+            let pathIndex: Int
+            let startProgress: CGFloat
+            let endProgress: CGFloat
+            let length: CGFloat
+        }
+
         init(id: String,
              order: Int,
              path: Path,
              points: [CGPoint],
              startPoint: CGPoint,
              endPoint: CGPoint,
-             checkpointSegments: [CheckpointSegment]) {
+             checkpointSegments: [CheckpointSegment],
+             checkpoints: [CheckpointDescriptor]) {
             self.id = id
             self.order = order
             self.path = path
@@ -1311,6 +1512,7 @@ private struct WordLayout {
             self.startPoint = startPoint
             self.endPoint = endPoint
             self.checkpointSegments = checkpointSegments
+            self.checkpoints = checkpoints
             self.length = ScaledStroke.computeLength(points: points)
         }
 

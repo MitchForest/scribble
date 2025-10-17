@@ -49,10 +49,16 @@ struct CheckpointValidator {
     static func evaluate(drawing: PKDrawing,
                          template: StrokeTraceTemplate,
                          configuration: Configuration,
-                         liveStrokeSamples: [LiveSample] = []) -> Result {
-        let plan = TraceCheckpointPlan.make(template: template,
+                         liveStrokeSamples: [LiveSample] = [],
+                         precomputedPlan: TraceCheckpointPlan? = nil) -> Result {
+        let plan: TraceCheckpointPlan
+        if let provided = precomputedPlan {
+            plan = provided
+        } else {
+            plan = TraceCheckpointPlan.make(template: template,
                                             checkpointLength: configuration.checkpointLength,
                                             spacing: configuration.spacingLength)
+        }
 
         guard plan.totalCheckpointCount > 0 else {
             return Result(checkpointStatuses: [],

@@ -4,7 +4,7 @@ struct PracticeUnit: Identifiable, Hashable {
     enum ID: String, CaseIterable, Hashable {
         case letters
         case alphabet
-        case sentences
+        case words
     }
 
     let id: ID
@@ -22,7 +22,7 @@ struct PracticeLesson: Identifiable, Hashable {
     enum Kind: Hashable {
         case letter(character: Character, style: CharacterStyle)
         case alphabet(range: ClosedRange<Character>, style: CharacterStyle)
-        case sentence(index: Int)
+        case word(index: Int)
     }
 
     typealias ID = String
@@ -56,7 +56,7 @@ enum PracticeLessonLibrary {
         let alphabetUpper = makeAlphabetLessons(style: .upper, startingIndex: alphabetLower.count + 1)
         let alphabet = alphabetLower + alphabetUpper
 
-        let sentences = makeSentenceLessons()
+        let words = makeWordLessons()
 
         return [
             PracticeUnit(id: .letters,
@@ -67,10 +67,10 @@ enum PracticeLessonLibrary {
                          title: "Alphabet",
                          description: "Practice smooth runs of six letters in sequence.",
                          lessons: alphabet),
-            PracticeUnit(id: .sentences,
-                         title: "Sentences",
-                         description: "Keep your flow with single-line sentence drills.",
-                         lessons: sentences)
+            PracticeUnit(id: .words,
+                         title: "Words",
+                         description: "Build rhythm with short word group drills.",
+                         lessons: words)
         ]
     }()
 
@@ -92,13 +92,12 @@ enum PracticeLessonLibrary {
 
     private static func makeLetterLessons(style: PracticeLesson.CharacterStyle,
                                           startingIndex: Int = 1) -> [PracticeLesson] {
-        let letters: [Character] = Array("abcdefghijklmnopqrstuvwx")
-        let repetitionsPerLine = style == .lower ? 5 : 4
+        let letters: [Character] = Array("abcdefghijklmnopqrstuvwxyz")
         return letters.enumerated().map { offset, character in
             let display = styledString(for: character, style: style)
-            let practiceText = repeatedSequence(of: display,
-                                                count: repetitionsPerLine,
-                                                separator: "   ")
+            let practiceText = makeRepeatedPracticeLine(for: character,
+                                                        styled: display,
+                                                        style: style)
             let subtitle = style == .lower ? "Lowercase drill" : "Uppercase drill"
             let lessonIndex = startingIndex + offset
             let title = "Lesson \(lessonIndex)"
@@ -126,8 +125,8 @@ enum PracticeLessonLibrary {
 
         return chunks.enumerated().map { offset, chunk in
             let formatted = chunk.map { styledString(for: $0, style: style) }
-            let sequence = formatted.joined(separator: " ")
-            let practiceText = sequence
+            let baseSequence = formatted.joined(separator: letterSeparator)
+            let practiceText = makeSequencePracticeLine(from: baseSequence)
             let first = formatted.first ?? ""
             let last = formatted.last ?? ""
             let subtitle = style == .lower ? "Lowercase run" : "Uppercase run"
@@ -144,56 +143,56 @@ enum PracticeLessonLibrary {
                 subtitle: subtitle,
                 cardGlyph: "\(first)-\(last)",
                 practiceText: practiceText,
-                referenceText: sequence,
+                referenceText: practiceText,
                 order: startingIndex + offset
             )
         }
     }
 
-    private static func makeSentenceLessons() -> [PracticeLesson] {
-        let sentences: [String] = [
-            "Write with calm focus",
-            "Keep the pencil gliding",
-            "Light pressure keeps lines clean",
-            "Trace the curve with patience",
-            "Follow the guide to improve",
-            "Steady strokes build rhythm",
-            "Pause and breathe between letters",
-            "Aim for smooth and even spacing",
-            "Let the wrist lead each loop",
-            "Relax the grip to stay loose",
-            "Anchor your elbow for control",
-            "Glide across the page softly",
-            "Match the height of every stem",
-            "Listen to the rhythm you create",
-            "Lean into the forward slant",
-            "Round each bowl confidently",
-            "Imagine the ink before it appears",
-            "Keep your baseline consistent",
-            "Stretch tall letters with ease",
-            "Leave room for the next word",
-            "Finish each tail with grace",
-            "Let the stroke land gently",
-            "Celebrate small wins today",
-            "Practice turns progress into joy",
-            "Trust the guide dots to help",
-            "Take time to reset your hand",
-            "Stay curious with every mark",
-            "Smile as the letters flow",
-            "Invite play into the practice",
-            "Close the session with gratitude"
+    private static func makeWordLessons() -> [PracticeLesson] {
+        let phrases: [String] = [
+            "the big cat sat",
+            "soft rain taps",
+            "bright sun rays",
+            "calm winds blow",
+            "small birds sing",
+            "kids laugh loud",
+            "the red kite",
+            "cool lake breeze",
+            "light clouds drift",
+            "fresh green grass",
+            "warm tea time",
+            "swift fox runs",
+            "blue waves roll",
+            "quiet night sky",
+            "silver moon glow",
+            "tiny seeds sprout",
+            "brave hearts grow",
+            "happy hands draw",
+            "gentle streams flow",
+            "soft petals fall",
+            "golden light spills",
+            "sweet honey drips",
+            "clear bells ring",
+            "bright stars twirl",
+            "crisp leaves spin",
+            "steady beats drum",
+            "shy deer peek",
+            "fresh bread bakes",
+            "kind words bloom",
+            "calm tides rise"
         ]
 
-        return sentences.enumerated().map { index, sentence in
+        return phrases.enumerated().map { index, phrase in
             PracticeLesson(
-                id: "sentences.\(index + 1)",
-                unitId: .sentences,
-                kind: .sentence(index: index + 1),
-                title: "Sentence \(index + 1)",
-                subtitle: "Single line",
-                cardGlyph: sentence,
-                practiceText: sentence,
-                referenceText: sentence,
+                id: "words.\(index + 1)",
+                unitId: .words,
+                kind: .word(index: index + 1),
+                title: "Phrase \(index + 1)",
+                subtitle: "Word loop",
+                cardGlyph: phrase,
+                practiceText: phrase,
+                referenceText: phrase,
                 order: index + 1
             )
         }
@@ -214,5 +213,20 @@ enum PracticeLessonLibrary {
                                          separator: String = " ") -> String {
         guard count > 1 else { return text }
         return Array(repeating: text, count: count).joined(separator: separator)
+    }
+
+    private static let letterSeparator = " "
+    private static let letterRepeatCount = 6
+
+    private static func makeRepeatedPracticeLine(for _: Character,
+                                                  styled display: String,
+                                                  style _: PracticeLesson.CharacterStyle) -> String {
+        repeatedSequence(of: display,
+                         count: letterRepeatCount,
+                         separator: letterSeparator)
+    }
+
+    private static func makeSequencePracticeLine(from baseSequence: String) -> String {
+        baseSequence
     }
 }
