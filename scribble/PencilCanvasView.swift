@@ -14,6 +14,7 @@ struct PencilCanvasView: UIViewRepresentable {
         let view = PKCanvasView()
         view.drawing = drawing
         view.delegate = context.coordinator
+        context.coordinator.updateParent(self)
         context.coordinator.attach(to: view)
         view.backgroundColor = .clear
         view.alwaysBounceVertical = false
@@ -81,6 +82,7 @@ struct PencilCanvasView: UIViewRepresentable {
             uiView.tool = PKInkingTool(.pen, color: .label, width: lineWidth)
         }
 
+        context.coordinator.updateParent(self)
         context.coordinator.attach(to: uiView)
     }
 
@@ -89,10 +91,14 @@ struct PencilCanvasView: UIViewRepresentable {
     }
 
     final class Coordinator: NSObject, PKCanvasViewDelegate {
-        private let parent: PencilCanvasView
+        private var parent: PencilCanvasView
         private weak var observedCanvasView: PKCanvasView?
 
         init(parent: PencilCanvasView) {
+            self.parent = parent
+        }
+
+        func updateParent(_ parent: PencilCanvasView) {
             self.parent = parent
         }
 

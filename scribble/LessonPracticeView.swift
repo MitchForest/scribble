@@ -361,7 +361,7 @@ private struct LessonPracticeBoard: View {
                                     isLeftHanded: settings.isLeftHanded)
 
             ZStack(alignment: .top) {
-                VStack(alignment: .center, spacing: max(layout.height * 0.18, 14)) {
+                VStack(alignment: .center, spacing: max(layout.height * 0.09, 8)) {
                     ReferenceLineView(layout: layout,
                                       currentIndex: viewModel.currentLetterIndex,
                                       animationToken: animationToken,
@@ -409,8 +409,8 @@ private struct LessonPracticeBoard: View {
                                          onRetryFeedback: { showRetryFeedback() })
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .padding(.top, 18)
-                .padding(.bottom, 24)
+                .padding(.top, 14)
+                .padding(.bottom, 20)
                 .onChange(of: viewModel.targetText) { _, _ in
                     feedback = nil
                     resetToken &+= 1
@@ -725,15 +725,19 @@ private struct LetterPracticeCanvas: View {
                 .frame(width: canvasWidth, height: canvasHeight)
 
             if let warningMessage {
-                Text(warningMessage)
-                    .font(.callout.weight(.semibold))
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 12)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .shadow(color: Color.black.opacity(0.08), radius: 6, x: 0, y: 3)
-                    .position(x: canvasWidth / 2,
-                              y: layout.ascender + metrics.startDotSize * 0.8)
-                    .transition(.opacity)
+                VStack {
+                    Spacer(minLength: 0)
+                    Text(warningMessage)
+                        .font(.callout.weight(.semibold))
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 12)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .shadow(color: Color.black.opacity(0.08), radius: 6, x: 0, y: 3)
+                        .frame(maxWidth: .infinity)
+                        .padding(.bottom, max(metrics.rowMetrics.ascender * 0.2, 12))
+                        .transition(.opacity)
+                }
+                .frame(width: canvasWidth, height: canvasHeight)
             }
 
             if letterCelebrationVisible {
@@ -1429,6 +1433,14 @@ private struct WordLayout {
                 cursor += spacingBetweenSegments
             }
         }
+
+        let trailingGap: CGFloat
+        if descriptors.count > 1 {
+            trailingGap = spacingBetweenSegments
+        } else {
+            trailingGap = baseSpacing
+        }
+        cursor += trailingGap
 
         self.segments = segments
         let resolvedXHeight: CGFloat
