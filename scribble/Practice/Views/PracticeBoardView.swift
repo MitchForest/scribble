@@ -183,13 +183,13 @@ struct PracticeBoardView: View {
             if repetitionChanged {
                 resetRows(replayLetter: false,
                           delayed: false,
-                          clearCompletedRows: !letterChanged)
+                          clearCompletedRows: false)
             }
 
             if letterChanged {
                 resetRows(replayLetter: false,
                           delayed: false,
-                          clearCompletedRows: true)
+                          clearCompletedRows: false)
             }
 
             updateProgress(using: updatedState)
@@ -235,12 +235,12 @@ struct PracticeBoardView: View {
         feedback = nil
 
         let performReset: () -> Void = {
-            var targetLetterIndex = sessionViewModel.sessionState.activeLetterGlobalIndex
-            if replayLetter,
-               let segment = layout.segments[safe: targetLetterIndex],
-               segment.isPractiseable {
-                sessionViewModel.handle(event: .replay(letterIndex: targetLetterIndex))
-                targetLetterIndex = sessionViewModel.sessionState.activeLetterGlobalIndex
+            if replayLetter {
+                let replayIndex = sessionViewModel.sessionState.activeLetterGlobalIndex
+                if let segment = layout.segments[safe: replayIndex],
+                   segment.isPractiseable {
+                    sessionViewModel.handle(event: .replay(letterIndex: replayIndex))
+                }
             }
 
             let state = sessionViewModel.sessionState
@@ -254,8 +254,7 @@ struct PracticeBoardView: View {
                 row.updateEnvironment(environment)
                 row.updateLetterIndex(letterIndex)
                 let phase: PracticeRowViewModel.Phase = index == state.activeRepetitionIndex ? .previewing : .frozen
-                let shouldClear = clearCompletedRows || index == state.activeRepetitionIndex
-                row.reset(to: phase, clearDrawing: shouldClear)
+                row.reset(to: phase, clearDrawing: clearCompletedRows)
                 row.setActive(index == state.activeRepetitionIndex)
             }
 

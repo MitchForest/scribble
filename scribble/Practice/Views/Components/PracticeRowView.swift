@@ -31,11 +31,12 @@ struct PracticeRowView: View {
 
             WordGuidesOverlay(layout: layout,
                               metrics: metrics,
-                              currentIndex: viewModel.letterIndex,
+                              currentLetterIndex: viewModel.letterIndex,
                               currentStrokeIndex: state.currentStrokeIndex,
                               guidesEnabled: guidesEnabled,
                               analysis: state.lastAnalysis,
-                              isActiveRow: state.isWriting)
+                              completedLetterIndices: state.completedLetterIndices,
+                              isActiveRow: viewModel.isActive)
             .allowsHitTesting(false)
 
             if state.isPreviewing,

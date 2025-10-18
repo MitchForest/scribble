@@ -27,10 +27,11 @@ struct PreviewStrokeOverlay: View {
 struct WordGuidesOverlay: View {
     let layout: WordLayout
     let metrics: PracticeCanvasMetrics
-    let currentIndex: Int
+    let currentLetterIndex: Int
     let currentStrokeIndex: Int
     let guidesEnabled: Bool
     let analysis: CheckpointValidator.Result?
+    let completedLetterIndices: Set<Int>
     let isActiveRow: Bool
 
     private let completedColor = Color(red: 0.35, green: 0.62, blue: 0.48)
@@ -64,10 +65,7 @@ struct WordGuidesOverlay: View {
             ZStack(alignment: .topLeading) {
                 ForEach(Array(layout.segments.enumerated()), id: \.1.id) { index, segment in
                     if !segment.strokes.isEmpty {
-                        drawSegment(segment,
-                                    at: index,
-                                    isCurrent: index == currentIndex,
-                                    isCompleted: index < currentIndex)
+                        drawSegment(segment, at: index)
                     }
                 }
             }
@@ -77,25 +75,23 @@ struct WordGuidesOverlay: View {
     }
 
     private func drawSegment(_ segment: WordLayout.Segment,
-                             at index: Int,
-                             isCurrent: Bool,
-                             isCompleted: Bool) -> some View {
-        let activeStroke = isActiveRow && isCurrent && currentStrokeIndex < segment.strokes.count ? currentStrokeIndex : nil
+                             at index: Int) -> some View {
+        let isCompletedLetter = completedLetterIndices.contains(index)
+        let highlightCurrent = isActiveRow && index == currentLetterIndex
+        let activeStroke = highlightCurrent && currentStrokeIndex < segment.strokes.count ? currentStrokeIndex : nil
 
         return ForEach(segment.strokes.indices, id: \.self) { strokeIndex in
             let stroke = segment.strokes[strokeIndex]
             ZStack(alignment: .topLeading) {
-                if isCompleted {
-                    let color = isActiveRow ? completedColor : completedColor.opacity(0.25)
+                if isCompletedLetter {
                     stroke.path
-                        .stroke(color,
-                                style: StrokeStyle(lineWidth: metrics.guideLineWidth * 0.9,
+                        .stroke(completedColor,
+                                style: StrokeStyle(lineWidth: metrics.guideLineWidth,
                                                    lineCap: .round,
                                                    lineJoin: .round))
                 } else {
-                    let highlightCurrent = isActiveRow && isCurrent
                     let baseDash: [CGFloat] = highlightCurrent ? [] : [6, 8]
-                    let baseOpacity = highlightCurrent ? 0.18 : (isActiveRow ? 0.18 : 0.1)
+                    let baseOpacity = highlightCurrent ? 0.22 : (isActiveRow ? 0.14 : 0.08)
                     let lineWidth = metrics.guideLineWidth * (isActiveRow ? 1 : 0.85)
                     stroke.path
                         .stroke(dormantColor.opacity(baseOpacity),
@@ -106,7 +102,7 @@ struct WordGuidesOverlay: View {
 
                     if highlightCurrent && strokeIndex == activeStroke {
                         ForEach(stroke.checkpointSegments, id: \.index) { checkpoint in
-                            if let color = colorForCheckpoint(checkpoint.index) {
+                            if let color = colorForCheckpoint(checkpoint.index, highlightCurrent: highlightCurrent) {
                                 stroke.path
                                     .trimmedPath(from: checkpoint.startProgress, to: checkpoint.endProgress)
                                     .stroke(color,
@@ -129,7 +125,9 @@ struct WordGuidesOverlay: View {
         }
     }
 
-    private func colorForCheckpoint(_ index: Int) -> Color? {
+    private func colorForCheckpoint(_ index: Int, highlightCurrent: Bool) -> Color? {
+        guard highlightCurrent else { return nil }
+
         if completedCheckpointSet.contains(index) {
             return completedColor
         }

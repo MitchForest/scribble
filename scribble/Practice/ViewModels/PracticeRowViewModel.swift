@@ -36,6 +36,7 @@ final class PracticeRowViewModel: ObservableObject {
         var loggedEmptyReset: Bool = false
         var skipNextEmptyReset: Bool = false
         var lastAnalysis: CheckpointValidator.Result?
+        var completedLetterIndices: Set<Int> = []
 
         var isWriting: Bool { phase == .writing }
         var isPreviewing: Bool { phase == .previewing }
@@ -118,6 +119,9 @@ final class PracticeRowViewModel: ObservableObject {
         state.loggedEmptyReset = false
         state.skipNextEmptyReset = phase == .writing
         state.lastAnalysis = nil
+        if clearDrawing {
+            state.completedLetterIndices = []
+        }
 
         practiceDebugLog("Row \(repetitionIndex) phase \(previousPhase) -> \(phase)")
     }
@@ -316,6 +320,7 @@ final class PracticeRowViewModel: ObservableObject {
         state.frozenDrawing = state.frozenDrawing.appending(state.drawing)
         reset(to: .frozen, clearDrawing: false)
         triggerSuccessHaptic()
+        state.completedLetterIndices.insert(letterIndex)
         onLetterComplete()
     }
 
