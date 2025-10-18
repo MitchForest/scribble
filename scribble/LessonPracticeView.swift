@@ -2,6 +2,13 @@ import SwiftUI
 import PencilKit
 import Foundation
 
+private func practiceDebugLog(_ message: @autoclosure () -> String,
+                              function: StaticString = #function) {
+    print("[Practice] \(function): \(message())")
+}
+
+private let lessonBoardTransitionDuration: Double = 0.32
+
 struct LessonPracticeView: View {
     @EnvironmentObject private var dataStore: PracticeDataStore
     @Environment(\.dismiss) private var dismiss
@@ -142,7 +149,7 @@ struct LessonPracticeView: View {
             .id(boardKey)
             .transition(boardTransition)
         }
-        .animation(.easeInOut(duration: 0.45), value: boardKey)
+        .animation(.easeInOut(duration: lessonBoardTransitionDuration), value: boardKey)
     }
 
     private func navigateToLesson(at index: Int,
@@ -155,7 +162,7 @@ struct LessonPracticeView: View {
             boardKey = UUID()
         }
         if animated {
-            withAnimation(.easeInOut(duration: 0.45)) {
+            withAnimation(.easeInOut(duration: lessonBoardTransitionDuration)) {
                 updates()
             }
         } else {
@@ -326,10 +333,14 @@ private struct LessonPracticeBoard: View {
     let onLessonComplete: () -> Void
 
     @StateObject private var viewModel: FreePracticeViewModel
+    @StateObject private var sessionViewModel: LessonPracticeViewModel
     @State private var feedback: FeedbackMessage?
     @State private var completionGuard = false
     @State private var resetToken = 0
-    @State private var previewToken = 0
+    @State private var pendingResetWorkItem: DispatchWorkItem?
+    @State private var activePracticeRow = 0
+    @State private var currentRepetition = 0
+    @State private var shouldClearCompletedRows = true
 
 
     init(lesson: PracticeLesson,
@@ -346,11 +357,30 @@ private struct LessonPracticeBoard: View {
         self.onLetterAward = onLetterAward
         self.onProgressChanged = onProgressChanged
         self.onLessonComplete = onLessonComplete
-        _viewModel = StateObject(wrappedValue: FreePracticeViewModel(initialText: lesson.practiceText))
+        let initialText = lesson.practiceText
+        let timelineViewModel = FreePracticeViewModel(initialText: initialText)
+        _viewModel = StateObject(wrappedValue: timelineViewModel)
+        let controller = PracticeSessionController(lesson: lesson,
+                                                   settings: settings,
+                                                   timeline: timelineViewModel.timelineSnapshot,
+                                                   repetitions: LetterPracticeCanvas.repetitionCount)
+        _sessionViewModel = StateObject(wrappedValue: LessonPracticeViewModel(controller: controller))
     }
 
     private var guidesEnabled: Bool {
         settings.prefersGuides
+    }
+
+    private var sessionState: PracticeSessionController.State {
+        sessionViewModel.sessionState
+    }
+
+    private var sessionTimeline: [LetterTimelineItem] {
+        sessionState.timeline.items
+    }
+
+    private var currentLetter: LetterTimelineItem? {
+        sessionTimeline[safe: sessionState.activeLetterGlobalIndex]
     }
 
     var body: some View {
@@ -359,7 +389,7 @@ private struct LessonPracticeBoard: View {
             let outerPadding: CGFloat = max(24 - min(safeInsets.leading, safeInsets.trailing), 18)
             let availableWidth = max(proxy.size.width - safeInsets.leading - safeInsets.trailing - outerPadding * 2, 220)
             let baseMetrics = PracticeCanvasMetrics(strokeSize: settings.difficulty.profile.strokeSize)
-            let sizing = PracticeCanvasSizing.resolve(items: viewModel.timeline,
+            let sizing = PracticeCanvasSizing.resolve(items: sessionTimeline,
                                                       availableWidth: availableWidth,
                                                       baseMetrics: baseMetrics,
                                                       isLeftHanded: settings.isLeftHanded)
@@ -371,41 +401,41 @@ private struct LessonPracticeBoard: View {
                     LetterPracticeCanvas(layout: layout,
                                          metrics: metrics,
                                          resetTrigger: resetToken,
-                                         previewTrigger: previewToken,
-                                         currentIndex: viewModel.currentLetterIndex,
+                                         currentIndex: sessionState.activeLetterGlobalIndex,
+                                         activeRepetition: currentRepetition,
+                                         clearCompletedRows: shouldClearCompletedRows,
                                          guidesEnabled: guidesEnabled,
                                          difficulty: settings.difficulty,
                                          hapticsEnabled: settings.hapticsEnabled,
                                          allowFingerInput: allowFingerInput,
-                                         segment: layout.segments[safe: viewModel.currentLetterIndex],
+                                         segment: layout.segments[safe: sessionState.activeLetterGlobalIndex],
+                                         onActiveRowChange: { index in
+                                             activePracticeRow = index
+                                             let symbol = currentLetter?.character
+                                             practiceDebugLog("Active row -> \(index) letterIndex: \(sessionState.activeLetterGlobalIndex) symbol: \(symbol.map(String.init) ?? "nil")")
+                                         },
                                          onWarning: {
-                                             viewModel.markWarningForCurrentLetter()
+                                             
                                          },
                                          onStrokeValidated: { _, _ in },
-                                         onLetterComplete: {
-                                             guard let letter = viewModel.currentLetter else { return }
-                                             onLetterAward(letter)
-                                             let lessonDone = viewModel.markLetterCompleted()
-                                             onProgressChanged(viewModel.completedLetterCount,
-                                                               viewModel.totalPractiseableLetters)
-                                             viewModel.advanceToNextPractiseableLetter()
-                                             DispatchQueue.main.async {
-                                                 startPreview(resetCanvas: true, replayLetter: false)
-                                             }
-                                             if lessonDone {
-                                                 triggerLessonCompletion()
-                                             }
-                                         },
+                                        onLetterComplete: {
+                                            handleLetterCompletion()
+                                        },
                                          onSuccessFeedback: { showSuccessFeedback() },
                                          onRetryFeedback: { showRetryFeedback() })
 
                     if let bubble = feedback,
-                       let segment = layout.segments[safe: viewModel.currentLetterIndex] {
+                       let segment = layout.segments[safe: sessionState.activeLetterGlobalIndex] {
                         let baselineY = layout.ascender
                         let bubbleYUpperBound = layout.ascender + layout.descender - 32
                         let bubbleY = min(max(baselineY - 28, 32), bubbleYUpperBound)
+                        let rowHeight = metrics.canvasHeight
+                        let baseRowSpan = metrics.rowMetrics.ascender + metrics.rowMetrics.descender
+                        let rowSpacing = max(baseRowSpan * 0.18, metrics.practiceLineWidth * 2)
+                        let rowOffset = CGFloat(activePracticeRow) * (rowHeight + rowSpacing)
                         FeedbackBubbleView(message: bubble)
-                            .position(x: segment.frame.midX + layout.leadingInset, y: bubbleY)
+                            .position(x: segment.frame.midX + layout.leadingInset,
+                                      y: bubbleY + rowOffset)
                     }
                 }
                 .padding(.horizontal, outerPadding)
@@ -416,23 +446,28 @@ private struct LessonPracticeBoard: View {
         }
         .frame(minHeight: 280)
         .onAppear {
-            viewModel.resumeIfNeeded()
-            onProgressChanged(viewModel.completedLetterCount, viewModel.totalPractiseableLetters)
-            DispatchQueue.main.async {
-                startPreview(resetCanvas: true, replayLetter: false)
-            }
-        }
-        .onChange(of: viewModel.currentLetterIndex) { _, _ in
-            feedback = nil
-            startPreview(resetCanvas: true, replayLetter: false)
+            sessionViewModel.handle(event: .start)
+            shouldClearCompletedRows = true
+            updateProgress(using: sessionState)
+            practiceDebugLog("LessonPracticeBoard onAppear letterIndex: \(sessionState.activeLetterGlobalIndex) totalLetters: \(sessionState.totalLetters)")
+            resetPracticeRows(replayLetter: false, delayed: false)
         }
         .onChange(of: viewModel.targetText) { _, _ in
             completionGuard = false
-            viewModel.resetProgress()
-            startPreview(resetCanvas: true, replayLetter: true)
+            currentRepetition = 0
+            shouldClearCompletedRows = true
+            viewModel.rebuildTimeline()
+            let updatedTimeline = viewModel.timelineSnapshot
+            practiceDebugLog("Target text changed -> \(viewModel.targetText)")
+            sessionViewModel.handle(event: .updateTimeline(updatedTimeline))
+            resetPracticeRows(replayLetter: true, delayed: true)
         }
         .onChange(of: clearTrigger) { _, _ in
             handleClear()
+        }
+        .onReceive(sessionViewModel.$sessionState) { state in
+            currentRepetition = state.activeRepetitionIndex
+            updateProgress(using: state)
         }
     }
 
@@ -447,28 +482,95 @@ private struct LessonPracticeBoard: View {
     private func handleClear() {
         feedback = nil
         completionGuard = false
-        viewModel.resetProgress()
-        startPreview(resetCanvas: true, replayLetter: true)
-        onProgressChanged(0, viewModel.totalPractiseableLetters)
+        currentRepetition = 0
+        shouldClearCompletedRows = true
+        practiceDebugLog("Handle clear invoked")
+        sessionViewModel.handle(event: .clearAll)
+        resetPracticeRows(replayLetter: true, delayed: false)
+        updateProgress(using: sessionViewModel.sessionState)
     }
 
-    private func startPreview(resetCanvas: Bool, replayLetter: Bool) {
-        guard let currentSegment = viewModel.timeline[safe: viewModel.currentLetterIndex],
-              currentSegment.isPractiseable else {
-            if resetCanvas {
-                resetToken &+= 1
-            }
-            previewToken &+= 1
-            return
-        }
-        if replayLetter {
-            viewModel.replay(at: viewModel.currentLetterIndex)
-        }
-        if resetCanvas {
-            resetToken &+= 1
+    private func resetPracticeRows(replayLetter: Bool, delayed: Bool, clearCompletedRows: Bool = true) {
+        pendingResetWorkItem?.cancel()
+        pendingResetWorkItem = nil
+        let letterIndex = sessionState.activeLetterGlobalIndex
+        practiceDebugLog("resetPracticeRows replay: \(replayLetter) delayed: \(delayed) letterIndex: \(letterIndex)")
+
+        shouldClearCompletedRows = clearCompletedRows
+
+        if replayLetter,
+           let segment = sessionTimeline[safe: letterIndex],
+           segment.isPractiseable {
+            practiceDebugLog("Replaying letter at index: \(letterIndex) symbol: \(String(segment.character))")
+            sessionViewModel.handle(event: .replay(letterIndex: letterIndex))
         }
         feedback = nil
-        previewToken &+= 1
+
+        let workItem = DispatchWorkItem {
+            resetToken &+= 1
+            practiceDebugLog("resetToken incremented -> \(resetToken)")
+            pendingResetWorkItem = nil
+        }
+        pendingResetWorkItem = workItem
+
+        if delayed {
+            DispatchQueue.main.asyncAfter(deadline: .now() + lessonBoardTransitionDuration, execute: workItem)
+        } else {
+            DispatchQueue.main.async(execute: workItem)
+        }
+    }
+
+    private func updateProgress(using state: PracticeSessionController.State) {
+        let completedAcrossRepetitions = state.repetitions.reduce(0) { count, repetition in
+            count + repetition.rows.filter { $0.didCompleteLetter }.count
+        }
+        let totalAcrossRepetitions = max(state.totalLetters * LetterPracticeCanvas.repetitionCount, 1)
+        onProgressChanged(completedAcrossRepetitions, totalAcrossRepetitions)
+    }
+
+    private func isSessionComplete(_ state: PracticeSessionController.State) -> Bool {
+        let totalAcrossRepetitions = state.totalLetters * LetterPracticeCanvas.repetitionCount
+        guard totalAcrossRepetitions > 0 else { return false }
+        let completedAcrossRepetitions = state.repetitions.reduce(0) { count, repetition in
+            count + repetition.rows.filter { $0.didCompleteLetter }.count
+        }
+        return completedAcrossRepetitions >= totalAcrossRepetitions
+    }
+
+    private func handleLetterCompletion() {
+        let previousState = sessionState
+        let activeIndex = previousState.activeLetterGlobalIndex
+        let letter = currentLetter ?? sessionTimeline[safe: activeIndex]
+        guard let letter else { return }
+
+        onLetterAward(letter)
+        sessionViewModel.handle(event: .letterCompleted(repetition: previousState.activeRepetitionIndex,
+                                                        letterIndex: activeIndex))
+
+        let updatedState = sessionViewModel.sessionState
+        currentRepetition = updatedState.activeRepetitionIndex
+        let repetitionChanged = updatedState.activeRepetitionIndex != previousState.activeRepetitionIndex
+        let letterChanged = updatedState.activeLetterGlobalIndex != previousState.activeLetterGlobalIndex
+
+        practiceDebugLog("Letter \(letter.character) complete -> repetition \(previousState.activeRepetitionIndex) -> next repetition \(updatedState.activeRepetitionIndex) letterIndex \(updatedState.activeLetterGlobalIndex)")
+
+        if repetitionChanged {
+            resetPracticeRows(replayLetter: true,
+                              delayed: false,
+                              clearCompletedRows: !letterChanged)
+        }
+
+        if letterChanged {
+            resetPracticeRows(replayLetter: false,
+                              delayed: false,
+                              clearCompletedRows: true)
+        }
+
+        updateProgress(using: updatedState)
+
+        if isSessionComplete(updatedState) {
+            triggerLessonCompletion()
+        }
     }
 
     private func showSuccessFeedback() {
@@ -526,41 +628,45 @@ private struct PracticeBackground: View {
 // MARK: - Practice Canvas
 
 private struct LetterPracticeCanvas: View {
+    static let repetitionCount = 3
+
     let layout: WordLayout
     let metrics: PracticeCanvasMetrics
     let resetTrigger: Int
-    let previewTrigger: Int
     let currentIndex: Int
+    let activeRepetition: Int
+    let clearCompletedRows: Bool
     let guidesEnabled: Bool
     let difficulty: PracticeDifficulty
     let hapticsEnabled: Bool
     let allowFingerInput: Bool
     let segment: WordLayout.Segment?
+    let onActiveRowChange: (Int) -> Void
     let onWarning: () -> Void
     let onStrokeValidated: (Int, Int) -> Void
     let onLetterComplete: () -> Void
     let onSuccessFeedback: () -> Void
     let onRetryFeedback: () -> Void
 
-    @State private var drawing = PKDrawing()
-    @State private var frozenDrawing = PKDrawing()
-    @State private var warningMessage: String?
-    @State private var currentStrokeIndex = 0
-    @State private var lastWarningTime: Date?
-    @State private var previousCompletedCount = 0
-    @State private var previousCheckpointCount = 0
-    @State private var didCompleteCurrentLetter = false
-    @State private var lastAnalysis: CheckpointValidator.Result?
-    @State private var activeStrokeSamples: [CanvasStrokeSample] = []
-    @State private var letterCelebrationVisible = false
-    @State private var letterCelebrationToken = 0
-    @State private var previewStrokeProgress: [CGFloat] = []
-    @State private var isPreviewing = false
-    @State private var previewAnimationGeneration = 0
+    private enum RowPhase: CustomStringConvertible {
+        case previewing
+        case writing
+        case frozen
 
-    private var profile: PracticeDifficultyProfile {
-        difficulty.profile
+        var description: String {
+            switch self {
+            case .previewing: return "previewing"
+            case .writing: return "writing"
+            case .frozen: return "frozen"
+            }
+        }
     }
+
+    @State private var rowStates: [RowState] = Array(repeating: RowState(), count: repetitionCount)
+    @State private var activeRowIndex = 0
+    @State private var hasInitializedRows = false
+
+    private var profile: PracticeDifficultyProfile { difficulty.profile }
 
     private var validationConfiguration: CheckpointValidator.Configuration {
         profile.validationConfiguration(rowHeight: metrics.rowMetrics.ascender,
@@ -568,17 +674,9 @@ private struct LetterPracticeCanvas: View {
                                         userInkWidth: metrics.userInkWidth)
     }
 
-    private var warningCooldown: TimeInterval {
-        profile.warningCooldown
-    }
+    private var warningCooldown: TimeInterval { profile.warningCooldown }
 
-    private var hapticStyle: PracticeDifficultyProfile.HapticStyle {
-        profile.hapticStyle
-    }
-
-    private var canvasHeight: CGFloat {
-        metrics.canvasHeight
-    }
+    private var hapticStyle: PracticeDifficultyProfile.HapticStyle { profile.hapticStyle }
 
     private var currentSegment: WordLayout.Segment? {
         segment ?? layout.segments[safe: currentIndex]
@@ -586,11 +684,66 @@ private struct LetterPracticeCanvas: View {
 
     var body: some View {
         let canvasWidth = layout.width + layout.leadingInset + layout.trailingInset
+        let rowHeight = metrics.canvasHeight
+        let baseRowSpan = metrics.rowMetrics.ascender + metrics.rowMetrics.descender
+        let rowSpacing = max(baseRowSpan * 0.18, metrics.practiceLineWidth * 2)
+        let totalHeight = rowHeight * CGFloat(Self.repetitionCount) + rowSpacing * CGFloat(Self.repetitionCount - 1)
+
         return ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: 28, style: .continuous)
                 .stroke(Color.white.opacity(0.35), lineWidth: 1.2)
-                .frame(width: canvasWidth, height: canvasHeight)
+                .frame(width: canvasWidth, height: totalHeight)
 
+            ForEach(0..<Self.repetitionCount, id: \.self) { index in
+                practiceRow(at: index,
+                            canvasWidth: canvasWidth,
+                            rowHeight: rowHeight)
+                .offset(y: CGFloat(index) * (rowHeight + rowSpacing))
+            }
+        }
+        .frame(width: canvasWidth, height: totalHeight, alignment: .topLeading)
+        .padding(.vertical, 6)
+        .onChange(of: layout.cacheKey) { _, _ in
+            DispatchQueue.main.async {
+                resetAllRows(clearCompleted: true)
+            }
+        }
+        .onChange(of: currentIndex) { _, _ in
+            DispatchQueue.main.async {
+                resetAllRows(clearCompleted: true)
+            }
+        }
+        .onChange(of: resetTrigger) { _, _ in
+            DispatchQueue.main.async {
+                resetAllRows(clearCompleted: clearCompletedRows)
+            }
+        }
+        .onChange(of: activeRepetition) { _, _ in
+            DispatchQueue.main.async {
+                resetAllRows(clearCompleted: false)
+            }
+        }
+        .onAppear {
+            onActiveRowChange(activeRowIndex)
+            guard !hasInitializedRows else { return }
+            hasInitializedRows = true
+            practiceDebugLog("LetterPracticeCanvas onAppear -> initializing rows")
+            resetAllRows(clearCompleted: true)
+        }
+    }
+
+    private func practiceRow(at index: Int,
+                             canvasWidth: CGFloat,
+                             rowHeight: CGFloat) -> some View {
+        let phase = rowStates[index].phase
+        let isWriting = phase == .writing
+        let isPreviewing = phase == .previewing
+        let drawingBinding = Binding(
+            get: { rowStates[index].drawing },
+            set: { rowStates[index].drawing = $0 }
+        )
+
+        return ZStack(alignment: .topLeading) {
             PracticeRowGuides(width: layout.width,
                               ascender: layout.ascender,
                               descender: layout.descender,
@@ -598,54 +751,58 @@ private struct LetterPracticeCanvas: View {
                               guideLineWidth: metrics.guideLineWidth)
             .padding(.leading, layout.leadingInset)
             .padding(.trailing, layout.trailingInset)
+            .allowsHitTesting(false)
 
             WordGuidesOverlay(layout: layout,
                               metrics: metrics,
                               currentIndex: currentIndex,
-                              currentStrokeIndex: currentStrokeIndex,
+                              currentStrokeIndex: rowStates[index].currentStrokeIndex,
                               guidesEnabled: guidesEnabled,
-                              analysis: lastAnalysis)
+                              analysis: rowStates[index].lastAnalysis,
+                              isActiveRow: isWriting)
+            .allowsHitTesting(false)
 
             if isPreviewing,
                let previewSegment = currentSegment {
                 PreviewStrokeOverlay(segment: previewSegment,
-                                     progress: previewStrokeProgress,
+                                     progress: rowStates[index].previewStrokeProgress,
                                      lineWidth: previewSegment.lineWidth)
-                    .padding(.leading, layout.leadingInset)
-                    .padding(.trailing, layout.trailingInset)
+                .allowsHitTesting(false)
             }
 
-            StaticDrawingView(drawing: frozenDrawing)
+            StaticDrawingView(drawing: rowStates[index].frozenDrawing)
                 .allowsHitTesting(false)
-                .frame(width: canvasWidth, height: canvasHeight)
+                .frame(width: canvasWidth, height: rowHeight)
 
-            PencilCanvasView(drawing: $drawing,
+            PencilCanvasView(drawing: drawingBinding,
                              onDrawingChanged: { updated in
-                                 processDrawingChange(updated, activeSamples: activeStrokeSamples)
+                                 processDrawingChange(updated, rowIndex: index)
                              },
                              onLiveStrokeSample: { sample in
-                                 if let last = activeStrokeSamples.last,
+                                 var samples = rowStates[index].activeStrokeSamples
+                                 if let last = samples.last,
                                     last.timestamp == sample.timestamp,
                                     last.location == sample.location {
                                      return
-                                  }
-                                  activeStrokeSamples.append(sample)
-                                  processDrawingChange(drawing, activeSamples: activeStrokeSamples)
-                              },
-                              onLiveStrokeDidEnd: {
-                                  activeStrokeSamples.removeAll()
-                                  processDrawingChange(drawing, activeSamples: activeStrokeSamples)
-                              },
-                              allowFingerFallback: allowFingerInput,
-                              lineWidth: validationConfiguration.studentLineWidth)
-                .allowsHitTesting(!isPreviewing)
-                .padding(.horizontal, 0)
-                .frame(width: canvasWidth, height: canvasHeight)
+                                 }
+                                 samples.append(sample)
+                                 rowStates[index].activeStrokeSamples = samples
+                                 processDrawingChange(rowStates[index].drawing, rowIndex: index)
+                             },
+                             onLiveStrokeDidEnd: {
+                                 rowStates[index].activeStrokeSamples.removeAll()
+                                 processDrawingChange(rowStates[index].drawing, rowIndex: index)
+                             },
+                             allowFingerFallback: allowFingerInput,
+                             lineWidth: metrics.practiceLineWidth)
+                .allowsHitTesting(isWriting)
+                .opacity(isWriting ? 1 : 0.35)
+                .frame(width: canvasWidth, height: rowHeight)
 
-            if let warningMessage {
+            if isWriting, let warning = rowStates[index].warningMessage {
                 VStack {
                     Spacer(minLength: 0)
-                    Text(warningMessage)
+                    Text(warning)
                         .font(.callout.weight(.semibold))
                         .padding(.horizontal, 18)
                         .padding(.vertical, 12)
@@ -655,92 +812,92 @@ private struct LetterPracticeCanvas: View {
                         .padding(.bottom, max(metrics.rowMetrics.ascender * 0.2, 12))
                         .transition(.opacity)
                 }
-                .frame(width: canvasWidth, height: canvasHeight)
+                .frame(width: canvasWidth, height: rowHeight)
             }
 
-            if letterCelebrationVisible {
+            if rowStates[index].letterCelebrationVisible {
                 LetterCelebrationOverlay()
-                    .frame(width: canvasWidth, height: canvasHeight)
+                    .frame(width: canvasWidth, height: rowHeight)
                     .allowsHitTesting(false)
                     .transition(.scale.combined(with: .opacity))
             }
         }
-        .frame(width: canvasWidth, height: canvasHeight, alignment: .topLeading)
-        .padding(.vertical, 6)
-        .onChange(of: layout.cacheKey) { _, _ in
-            DispatchQueue.main.async {
-                resetCanvas()
-            }
+        .frame(width: canvasWidth, height: rowHeight, alignment: .topLeading)
+    }
+
+    private func resetAllRows(clearCompleted: Bool) {
+        practiceDebugLog("resetAllRows(clearCompleted: \(clearCompleted))")
+        cancelAllPreviews()
+        let targetIndex = rowStates.indices.contains(activeRepetition) ? activeRepetition : 0
+        for index in rowStates.indices {
+            let phase: RowPhase = index == targetIndex ? .previewing : .frozen
+            let shouldClear = clearCompleted || index == targetIndex
+            resetRowState(index, to: phase, clearDrawing: shouldClear)
         }
-        .onChange(of: currentIndex) { _, _ in
-            DispatchQueue.main.async {
-                drawing = PKDrawing()
-                currentStrokeIndex = 0
-                previousCompletedCount = 0
-                didCompleteCurrentLetter = false
-                warningMessage = nil
-                lastAnalysis = nil
-            }
-        }
-        .onChange(of: resetTrigger) { _, _ in
-            DispatchQueue.main.async {
-                restartCurrentAttempt(clearCompleted: true)
-            }
-        }
-        .onChange(of: previewTrigger) { _, _ in
-            DispatchQueue.main.async {
-                startPreviewAnimation()
-            }
+        activeRowIndex = targetIndex
+        onActiveRowChange(activeRowIndex)
+        if rowStates.indices.contains(targetIndex) {
+            startPreviewAnimation(for: targetIndex)
         }
     }
 
-    private func resetCanvas() {
-        cancelPreview()
-        drawing = PKDrawing()
-        frozenDrawing = PKDrawing()
-        warningMessage = nil
-        currentStrokeIndex = 0
-        lastWarningTime = nil
-        previousCompletedCount = 0
-        previousCheckpointCount = 0
-        didCompleteCurrentLetter = false
-        lastAnalysis = nil
-        activeStrokeSamples = []
-        letterCelebrationVisible = false
-        letterCelebrationToken &+= 1
-    }
-
-    private func restartCurrentAttempt(clearCompleted: Bool = false) {
-        cancelPreview()
-        drawing = PKDrawing()
-        if clearCompleted {
-            frozenDrawing = PKDrawing()
+    private func logIgnoredInput(rowIndex: Int, reason: String) {
+        guard rowStates.indices.contains(rowIndex) else { return }
+        let previous = rowStates[rowIndex].lastIgnoreReason
+        if previous != reason {
+            rowStates[rowIndex].lastIgnoreReason = reason
+            practiceDebugLog("Row \(rowIndex) ignoring input: \(reason)")
         }
-        warningMessage = nil
-        currentStrokeIndex = 0
-        lastWarningTime = nil
-        previousCompletedCount = 0
-        previousCheckpointCount = 0
-        didCompleteCurrentLetter = false
-        lastAnalysis = nil
-        activeStrokeSamples = []
-        letterCelebrationVisible = false
-        letterCelebrationToken &+= 1
     }
 
-    private func startPreviewAnimation() {
-        previewAnimationGeneration &+= 1
-        let generation = previewAnimationGeneration
-        previewStrokeProgress = []
-        isPreviewing = false
+    private func resetRowState(_ index: Int, to phase: RowPhase, clearDrawing: Bool) {
+        guard rowStates.indices.contains(index) else { return }
+        let previousPhase = rowStates[index].phase
+        rowStates[index].phase = phase
+        rowStates[index].drawing = PKDrawing()
+        if clearDrawing {
+            rowStates[index].frozenDrawing = PKDrawing()
+        }
+        rowStates[index].warningMessage = nil
+        rowStates[index].currentStrokeIndex = 0
+        rowStates[index].lastWarningTime = nil
+        rowStates[index].previousCompletedCount = 0
+        rowStates[index].previousCheckpointCount = 0
+        rowStates[index].didCompleteCurrentLetter = false
+        rowStates[index].lastAnalysis = nil
+        rowStates[index].activeStrokeSamples = []
+        rowStates[index].letterCelebrationVisible = false
+        rowStates[index].letterCelebrationToken &+= 1
+        rowStates[index].previewStrokeProgress = []
+        rowStates[index].previewAnimationGeneration &+= 1
+        rowStates[index].lastIgnoreReason = nil
+        rowStates[index].loggedEmptyReset = false
+        rowStates[index].skipNextEmptyReset = phase == .writing
 
-        guard let segment = currentSegment,
-              !segment.strokes.isEmpty else {
+        if previousPhase != phase {
+            practiceDebugLog("Row \(index) phase \(previousPhase) -> \(phase)")
+        }
+    }
+
+    private func startPreviewAnimation(for rowIndex: Int) {
+        guard rowStates.indices.contains(rowIndex) else { return }
+        practiceDebugLog("startPreviewAnimation row: \(rowIndex) phase: \(rowStates[rowIndex].phase)")
+        guard rowStates[rowIndex].phase == .previewing else { return }
+
+        activeRowIndex = rowIndex
+        onActiveRowChange(rowIndex)
+
+        guard let segment = currentSegment, !segment.strokes.isEmpty else {
+            rowStates[rowIndex].previewStrokeProgress = []
+            rowStates[rowIndex].phase = .writing
+            onActiveRowChange(rowIndex)
+            practiceDebugLog("Row \(rowIndex) has no strokes; switching directly to writing")
             return
         }
 
-        isPreviewing = true
-        previewStrokeProgress = Array(repeating: 0, count: segment.strokes.count)
+        rowStates[rowIndex].previewAnimationGeneration &+= 1
+        let generation = rowStates[rowIndex].previewAnimationGeneration
+        rowStates[rowIndex].previewStrokeProgress = Array(repeating: 0, count: segment.strokes.count)
 
         let secondsPerPoint: Double = 0.002
         let minimumDuration: Double = 0.45
@@ -758,10 +915,10 @@ private struct LetterPracticeCanvas: View {
             completionDelay = localDelay + duration
 
             DispatchQueue.main.asyncAfter(deadline: .now() + localDelay) {
-                guard generation == previewAnimationGeneration else { return }
+                guard generation == rowStates[rowIndex].previewAnimationGeneration else { return }
                 withAnimation(.linear(duration: duration)) {
-                    if index < previewStrokeProgress.count {
-                        previewStrokeProgress[index] = 1
+                    if index < rowStates[rowIndex].previewStrokeProgress.count {
+                        rowStates[rowIndex].previewStrokeProgress[index] = 1
                     }
                 }
             }
@@ -770,59 +927,75 @@ private struct LetterPracticeCanvas: View {
         }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + completionDelay + 0.05) {
-            guard generation == previewAnimationGeneration else { return }
+            guard generation == rowStates[rowIndex].previewAnimationGeneration else { return }
             withAnimation(.easeOut(duration: 0.2)) {
-                isPreviewing = false
+                rowStates[rowIndex].previewStrokeProgress = []
             }
-            previewStrokeProgress = []
+            rowStates[rowIndex].phase = .writing
+            rowStates[rowIndex].skipNextEmptyReset = true
+            activeRowIndex = rowIndex
+            onActiveRowChange(rowIndex)
+            practiceDebugLog("Preview finished -> row \(rowIndex) now writing")
         }
     }
 
-    private func cancelPreview() {
-        previewAnimationGeneration &+= 1
-        previewStrokeProgress = []
-        isPreviewing = false
+    private func cancelAllPreviews() {
+        practiceDebugLog("cancelAllPreviews invoked")
+        for index in rowStates.indices {
+            rowStates[index].previewAnimationGeneration &+= 1
+            rowStates[index].previewStrokeProgress = []
+        }
     }
 
-    private func processDrawingChange(_ updated: PKDrawing,
-                                      activeSamples: [CanvasStrokeSample] = []) {
-        if isPreviewing {
-            drawing = PKDrawing()
+    private func processDrawingChange(_ updated: PKDrawing, rowIndex: Int) {
+        guard rowStates.indices.contains(rowIndex) else {
+            practiceDebugLog("processDrawingChange invalid row: \(rowIndex)")
+            return
+        }
+        let phase = rowStates[rowIndex].phase
+        if phase != .writing {
+            if phase == .previewing {
+                rowStates[rowIndex].drawing = PKDrawing()
+            }
+            logIgnoredInput(rowIndex: rowIndex, reason: "phase=\(phase)")
+            return
+        }
+        rowStates[rowIndex].lastIgnoreReason = nil
+
+        guard rowIndex == activeRowIndex else {
+            logIgnoredInput(rowIndex: rowIndex,
+                            reason: "inactive (activeRowIndex=\(activeRowIndex))")
             return
         }
 
         guard let segment = currentSegment else {
-            drawing = PKDrawing()
-            currentStrokeIndex = 0
-            previousCompletedCount = 0
-            previousCheckpointCount = 0
-            didCompleteCurrentLetter = false
-            warningMessage = nil
-            activeStrokeSamples = []
-            letterCelebrationVisible = false
-            letterCelebrationToken &+= 1
+            resetRowState(rowIndex, to: .writing, clearDrawing: false)
+            practiceDebugLog("processDrawingChange missing segment for row \(rowIndex) -> reset")
             return
         }
 
-        drawing = updated
+        rowStates[rowIndex].drawing = updated
 
-        if updated.strokes.isEmpty && activeSamples.isEmpty {
-            currentStrokeIndex = 0
-            previousCompletedCount = 0
-            previousCheckpointCount = 0
-            didCompleteCurrentLetter = false
-            warningMessage = nil
-            lastAnalysis = nil
-            letterCelebrationVisible = false
-            letterCelebrationToken &+= 1
+        if updated.strokes.isEmpty && rowStates[rowIndex].activeStrokeSamples.isEmpty {
+            if rowStates[rowIndex].skipNextEmptyReset {
+                rowStates[rowIndex].skipNextEmptyReset = false
+                return
+            }
+            if !rowStates[rowIndex].loggedEmptyReset {
+                practiceDebugLog("Row \(rowIndex) reset because drawing is empty")
+                rowStates[rowIndex].loggedEmptyReset = true
+            }
+            resetRowState(rowIndex, to: .writing, clearDrawing: false)
             return
         }
+        rowStates[rowIndex].loggedEmptyReset = false
+        rowStates[rowIndex].skipNextEmptyReset = false
 
         let template = makeTraceTemplate(for: segment)
         let usesPrecomputedPlan = abs(validationConfiguration.checkpointLength - WordLayout.checkpointLength) < .ulpOfOne &&
             abs(validationConfiguration.spacingLength - WordLayout.checkpointSpacing) < .ulpOfOne
         let precomputedPlan = usesPrecomputedPlan ? segment.checkpointPlan : nil
-        let liveSamples = activeSamples.map {
+        let liveSamples = rowStates[rowIndex].activeStrokeSamples.map {
             CheckpointValidator.LiveSample(location: $0.location, timestamp: $0.timestamp)
         }
         let analysis = CheckpointValidator.evaluate(drawing: updated,
@@ -830,14 +1003,14 @@ private struct LetterPracticeCanvas: View {
                                                     configuration: validationConfiguration,
                                                     liveStrokeSamples: liveSamples,
                                                     precomputedPlan: precomputedPlan)
-        lastAnalysis = analysis
+        rowStates[rowIndex].lastAnalysis = analysis
 
 #if DEBUG
         print("segment index: \(segment.index) checkpoints: \(analysis.totalCheckpointCount) next: \(analysis.activeCheckpointIndex)")
 #endif
 
         let completedCheckpointCount = analysis.completedCheckpointCount
-        if completedCheckpointCount > previousCheckpointCount {
+        if completedCheckpointCount > rowStates[rowIndex].previousCheckpointCount {
             if hapticsEnabled {
                 switch hapticStyle {
                 case .none:
@@ -846,53 +1019,43 @@ private struct LetterPracticeCanvas: View {
                     HapticsManager.shared.notice()
                 }
             }
-            previousCheckpointCount = completedCheckpointCount
-        } else if completedCheckpointCount < previousCheckpointCount {
-            previousCheckpointCount = completedCheckpointCount
+            rowStates[rowIndex].previousCheckpointCount = completedCheckpointCount
+        } else if completedCheckpointCount < rowStates[rowIndex].previousCheckpointCount {
+            rowStates[rowIndex].previousCheckpointCount = completedCheckpointCount
         }
 
-        #if DEBUG
-        print(
-            """
-            validator checkpoints \(analysis.completedCheckpointCount)/\(analysis.totalCheckpointCount) \
-            next:\(analysis.activeCheckpointIndex) \
-            failure:\(String(describing: analysis.failure))
-            """
-        )
-        #endif
-
         if let failure = analysis.failure {
-            restartCurrentAttempt()
-            presentFailure(failure)
+            restartRow(rowIndex)
+            presentFailure(failure, rowIndex: rowIndex)
+            practiceDebugLog("processDrawingChange failure -> \(failure) row \(rowIndex)")
             return
         }
 
-        warningMessage = nil
+        rowStates[rowIndex].warningMessage = nil
 
         let completedStrokes = segment.completedStrokeCount(using: analysis.checkpointStatuses)
 
-        if completedStrokes > previousCompletedCount {
-            for index in previousCompletedCount..<completedStrokes {
-                onStrokeValidated(index, segment.strokes.count)
+        if completedStrokes > rowStates[rowIndex].previousCompletedCount {
+            for strokeIndex in rowStates[rowIndex].previousCompletedCount..<completedStrokes {
+                onStrokeValidated(strokeIndex, segment.strokes.count)
             }
-            previousCompletedCount = completedStrokes
+            rowStates[rowIndex].previousCompletedCount = completedStrokes
             if hapticsEnabled {
                 HapticsManager.shared.success()
             }
             onSuccessFeedback()
-        } else if completedStrokes < previousCompletedCount {
-            previousCompletedCount = completedStrokes
+        } else if completedStrokes < rowStates[rowIndex].previousCompletedCount {
+            rowStates[rowIndex].previousCompletedCount = completedStrokes
         }
 
-        currentStrokeIndex = segment.firstIncompleteStrokeIndex(using: analysis.checkpointStatuses) ?? segment.strokes.count
+        rowStates[rowIndex].currentStrokeIndex = segment.firstIncompleteStrokeIndex(using: analysis.checkpointStatuses) ?? segment.strokes.count
 
-        let isComplete = analysis.isComplete
-
-        if isComplete && !didCompleteCurrentLetter {
-            didCompleteCurrentLetter = true
-            completeLetter()
-        } else if !isComplete {
-            didCompleteCurrentLetter = false
+        if analysis.isComplete && !rowStates[rowIndex].didCompleteCurrentLetter {
+            rowStates[rowIndex].didCompleteCurrentLetter = true
+            practiceDebugLog("processDrawingChange completed row \(rowIndex)")
+            completeRow(rowIndex)
+        } else if !analysis.isComplete {
+            rowStates[rowIndex].didCompleteCurrentLetter = false
         }
     }
 
@@ -909,7 +1072,8 @@ private struct LetterPracticeCanvas: View {
         return StrokeTraceTemplate(strokes: strokes)
     }
 
-    private func presentFailure(_ failure: CheckpointValidator.FailureReason) {
+    private func presentFailure(_ failure: CheckpointValidator.FailureReason,
+                                rowIndex: Int) {
         let message: String
         switch failure {
         case .outOfOrder:
@@ -917,24 +1081,26 @@ private struct LetterPracticeCanvas: View {
         default:
             message = "Keep following the path"
         }
-        showWarning(message)
+        showWarning(message, rowIndex: rowIndex)
     }
 
-    private func showWarning(_ message: String) {
+    private func showWarning(_ message: String, rowIndex: Int) {
+        guard rowStates.indices.contains(rowIndex) else { return }
         onWarning()
         onRetryFeedback()
-        warningMessage = message
+        practiceDebugLog("showWarning row \(rowIndex): \(message)")
+        rowStates[rowIndex].warningMessage = message
         let now = Date()
-        let shouldThrottle = lastWarningTime.map { now.timeIntervalSince($0) < warningCooldown } ?? false
+        let shouldThrottle = rowStates[rowIndex].lastWarningTime.map { now.timeIntervalSince($0) < warningCooldown } ?? false
         if !shouldThrottle {
-            lastWarningTime = now
+            rowStates[rowIndex].lastWarningTime = now
             if hapticsEnabled {
                 sendWarningHaptic()
             }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
             withAnimation(.easeInOut(duration: 0.25)) {
-                warningMessage = nil
+                rowStates[rowIndex].warningMessage = nil
             }
         }
     }
@@ -950,38 +1116,60 @@ private struct LetterPracticeCanvas: View {
         }
     }
 
-    // Advance to the next letter without animating the canvas itself.
-    // The parent view is responsible for any set-level transition once all letters finish.
-    private func completeLetter() {
-        if hapticsEnabled {
-            HapticsManager.shared.success()
-        }
-        frozenDrawing = frozenDrawing.appending(drawing)
-        drawing = PKDrawing()
-        currentStrokeIndex = 0
-        previousCompletedCount = 0
-        previousCheckpointCount = 0
-        didCompleteCurrentLetter = false
-        warningMessage = nil
-        lastWarningTime = nil
-        lastAnalysis = nil
-        letterCelebrationToken &+= 1
-        let celebrationToken = letterCelebrationToken
+    private func restartRow(_ index: Int) {
+        guard rowStates.indices.contains(index) else { return }
+        resetRowState(index, to: .writing, clearDrawing: false)
+        activeRowIndex = index
+        onActiveRowChange(activeRowIndex)
+        practiceDebugLog("restartRow -> \(index)")
+    }
+
+    private func completeRow(_ index: Int) {
+        guard rowStates.indices.contains(index) else { return }
+        practiceDebugLog("completeRow -> \(index)")
+
+        rowStates[index].frozenDrawing = rowStates[index].frozenDrawing.appending(rowStates[index].drawing)
+        resetRowState(index, to: .frozen, clearDrawing: false)
+        rowStates[index].letterCelebrationToken &+= 1
+        let celebrationToken = rowStates[index].letterCelebrationToken
+
         withAnimation(.spring(response: 0.45, dampingFraction: 0.75)) {
-            letterCelebrationVisible = true
+            rowStates[index].letterCelebrationVisible = true
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [celebrationToken] in
-            guard celebrationToken == letterCelebrationToken else { return }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
+            guard celebrationToken == rowStates[index].letterCelebrationToken else { return }
             withAnimation(.easeInOut(duration: 0.3)) {
-                letterCelebrationVisible = false
+                rowStates[index].letterCelebrationVisible = false
             }
         }
-        onSuccessFeedback()
+
+        activeRowIndex = index
+        onActiveRowChange(activeRowIndex)
         onLetterComplete()
     }
 
+    private struct RowState {
+        var phase: RowPhase = .frozen
+        var drawing = PKDrawing()
+        var frozenDrawing = PKDrawing()
+        var warningMessage: String?
+        var currentStrokeIndex = 0
+        var lastWarningTime: Date?
+        var previousCompletedCount = 0
+        var previousCheckpointCount = 0
+        var didCompleteCurrentLetter = false
+        var lastAnalysis: CheckpointValidator.Result?
+        var activeStrokeSamples: [CanvasStrokeSample] = []
+        var letterCelebrationVisible = false
+        var letterCelebrationToken = 0
+        var previewStrokeProgress: [CGFloat] = []
+        var previewAnimationGeneration = 0
+        var lastIgnoreReason: String?
+        var loggedEmptyReset = false
+        var skipNextEmptyReset = false
+    }
 }
-
 private struct LetterCelebrationOverlay: View {
     var body: some View {
         ZStack {
@@ -1032,6 +1220,7 @@ private struct WordGuidesOverlay: View {
     let currentStrokeIndex: Int
     let guidesEnabled: Bool
     let analysis: CheckpointValidator.Result?
+    let isActiveRow: Bool
 
     private let completedColor = Color(red: 0.35, green: 0.62, blue: 0.48)
     private let activeColor = Color(red: 0.21, green: 0.41, blue: 0.88)
@@ -1080,27 +1269,31 @@ private struct WordGuidesOverlay: View {
                              at index: Int,
                              isCurrent: Bool,
                              isCompleted: Bool) -> some View {
-        let activeStroke = isCurrent && currentStrokeIndex < segment.strokes.count ? currentStrokeIndex : nil
+        let activeStroke = isActiveRow && isCurrent && currentStrokeIndex < segment.strokes.count ? currentStrokeIndex : nil
 
-        return ForEach(Array(segment.strokes.enumerated()), id: \.element.id) { strokeIndex, stroke in
+        return ForEach(segment.strokes.indices, id: \.self) { strokeIndex in
+            let stroke = segment.strokes[strokeIndex]
             ZStack(alignment: .topLeading) {
                 if isCompleted {
+                    let color = isActiveRow ? completedColor : completedColor.opacity(0.25)
                     stroke.path
-                        .stroke(completedColor,
-                                style: StrokeStyle(lineWidth: metrics.guideLineWidth * 0.95,
+                        .stroke(color,
+                                style: StrokeStyle(lineWidth: metrics.guideLineWidth * 0.9,
                                                    lineCap: .round,
                                                    lineJoin: .round))
                 } else {
-                    let baseDash: [CGFloat] = isCurrent ? [] : [6, 8]
-                    let baseOpacity = isCurrent ? 0.12 : 0.22
+                    let highlightCurrent = isActiveRow && isCurrent
+                    let baseDash: [CGFloat] = highlightCurrent ? [] : [6, 8]
+                    let baseOpacity = highlightCurrent ? 0.18 : (isActiveRow ? 0.18 : 0.1)
+                    let lineWidth = metrics.guideLineWidth * (isActiveRow ? 1 : 0.85)
                     stroke.path
                         .stroke(dormantColor.opacity(baseOpacity),
-                                style: StrokeStyle(lineWidth: metrics.guideLineWidth,
+                                style: StrokeStyle(lineWidth: lineWidth,
                                                    lineCap: .round,
                                                    lineJoin: .round,
                                                    dash: baseDash))
 
-                    if isCurrent && strokeIndex == activeStroke {
+                    if highlightCurrent && strokeIndex == activeStroke {
                         ForEach(stroke.checkpointSegments, id: \.index) { checkpoint in
                             if let color = colorForCheckpoint(checkpoint.index) {
                                 stroke.path
@@ -1741,9 +1934,9 @@ private struct PracticeCanvasMetrics {
 
     private var baseCanvasPadding: CGFloat {
         switch strokeSize {
-        case .large: return 110
-        case .standard: return 90
-        case .compact: return 70
+        case .large: return 35
+        case .standard: return 28
+        case .compact: return 21
         }
     }
 

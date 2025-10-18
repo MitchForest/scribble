@@ -96,14 +96,31 @@ struct CheckpointValidator {
                 let projection = path.projection(for: sample.location)
                 var pointerState = checkpointStates[nextCheckpointIndex]
 
-                if projection.distance <= configuration.corridorRadius &&
-                    projection.progress >= pointerDescriptor.startProgress - 1e-4 {
+                if projection.distance <= configuration.corridorRadius {
+                    let endProgress = pointerDescriptor.startProgress + pointerDescriptor.length
+                    let startTolerance = max(pointerDescriptor.length * 0.4, configuration.studentLineWidth * 1.2)
+                    let endTolerance = max(pointerDescriptor.length * 0.3, configuration.studentLineWidth)
 
-                    pointerState.hasContact = true
-                    pointerState.completed = true
-                    checkpointStates[nextCheckpointIndex] = pointerState
-                    nextCheckpointIndex += 1
-                    continue
+                    if projection.progress >= pointerDescriptor.startProgress - startTolerance {
+                        pointerState.hasContact = true
+                        pointerState.maxProgress = max(pointerState.maxProgress, projection.progress)
+                        if projection.progress <= pointerDescriptor.startProgress + startTolerance {
+                            pointerState.touchedStart = true
+                        }
+
+                        if pointerState.maxProgress <= pointerDescriptor.startProgress {
+                            pointerState.touchedStart = true
+                        }
+
+                        if pointerState.touchedStart && pointerState.maxProgress >= endProgress - endTolerance {
+                            pointerState.completed = true
+                            checkpointStates[nextCheckpointIndex] = pointerState
+                            nextCheckpointIndex += 1
+                            continue
+                        }
+                        checkpointStates[nextCheckpointIndex] = pointerState
+                        continue
+                    }
                 } else if pointerState.hasContact && projection.distance > configuration.corridorRadius {
                     checkpointStates[nextCheckpointIndex] = pointerState
                 }
@@ -159,6 +176,8 @@ private extension CheckpointValidator {
     struct CheckpointProgress {
         var hasContact: Bool = false
         var completed: Bool = false
+        var touchedStart: Bool = false
+        var maxProgress: CGFloat = 0
     }
 
     struct Sample {
