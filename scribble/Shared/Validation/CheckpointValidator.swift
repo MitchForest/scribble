@@ -89,7 +89,6 @@ struct CheckpointValidator {
         outer: for sample in samples {
             guard failure == nil else { break }
 
-            // Step 1: update coverage/outside for current checkpoint.
             if nextCheckpointIndex < descriptors.count {
                 let pointerDescriptor = descriptors[nextCheckpointIndex]
                 let path = plan.paths[pointerDescriptor.pathIndex]
@@ -126,15 +125,11 @@ struct CheckpointValidator {
                 }
             }
 
-            // Step 2: detect genuinely out-of-order interactions.
             if let nearest = nearestPath(for: sample.location, in: plan.paths),
                nearest.projection.distance <= configuration.corridorRadius,
                let checkpointLocalIndex = plan.paths[nearest.index].checkpointIndex(for: nearest.projection.progress) {
                 let globalCheckpoint = plan.paths[nearest.index].checkpoints[checkpointLocalIndex].globalIndex
                 if globalCheckpoint > nextCheckpointIndex {
-                    // Only guard against genuine order violations. If the pen is brushing a future stroke,
-                    // we simply ignore that contact so the student can finish the active path without a reset.
-                    // The next checkpoint cannot advance until we return to the active path anyway.
                     let currentPathIndex = nextCheckpointIndex < descriptors.count ? descriptors[nextCheckpointIndex].pathIndex : nil
                     if let currentPathIndex, nearest.index != currentPathIndex {
                         continue
@@ -160,8 +155,6 @@ struct CheckpointValidator {
                       failure: failure)
     }
 }
-
-// MARK: - Helpers
 
 private extension CheckpointValidator {
     struct CheckpointDescriptor {
@@ -223,7 +216,6 @@ private extension CheckpointValidator {
         }
         return best
     }
-
 }
 
 private func clamp<T: Comparable>(_ value: T, lower: T, upper: T) -> T {

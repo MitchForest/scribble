@@ -1,15 +1,22 @@
 import UIKit
 
+protocol HapticsProviding {
+    func warning()
+    func success()
+    func notice(intensity: CGFloat)
+}
+
 @MainActor
-final class HapticsManager {
-    static let shared = HapticsManager()
+final class SystemHapticsProvider: HapticsProviding {
+    static let shared = SystemHapticsProvider()
+
+    private let notificationGenerator = UINotificationFeedbackGenerator()
+    private let impactGenerator = UIImpactFeedbackGenerator(style: .rigid)
+
     private init() {
         notificationGenerator.prepare()
         impactGenerator.prepare()
     }
-
-    private let notificationGenerator = UINotificationFeedbackGenerator()
-    private let impactGenerator = UIImpactFeedbackGenerator(style: .rigid)
 
     func warning() {
         notificationGenerator.prepare()

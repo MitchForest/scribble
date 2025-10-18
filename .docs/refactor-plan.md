@@ -19,8 +19,7 @@
 4. **View Layer Simplification**
 5. **Shared Utilities & Services Cleanup**
 6. **Testing Infrastructure**
-7. **Documentation & Governance**
-8. **Follow-up Improvements (Optional/Stretch)**
+7. _(removed per updated scope)_
 
 ---
 
@@ -86,9 +85,10 @@ Acceptance criteria:
 **Goal:** Centralize reusable functionality and introduce DI-friendly structure.
 
 - [ ] Collect common helpers (e.g., `HapticsManager`, `PencilCanvasView`, `CheckpointValidator`) into `Shared/Utilities` or `Shared/Services`.
-- [ ] Wrap side-effectful singletons in protocols for easier mocking/testing.
+- [x] Collect common helpers (e.g., `HapticsManager`, `PencilCanvasView`, `CheckpointValidator`) into `Shared/Utilities` or `Shared/Services`.
+- [x] Wrap side-effectful singletons in protocols for easier mocking/testing. _(Practice haptics now consume a `HapticsProviding` dependency with a default system provider.)_
 - [ ] Introduce a lightweight dependency container or environment injection strategy for practice module.
-- [ ] Document usage of shared utilities in this plan.
+- [x] Document usage of shared utilities in this plan. _See `.docs/practice-refactor/m5-shared-services.md` for decisions and follow-ups._
 
 ### Milestone 6 — Testing Infrastructure
 
@@ -98,25 +98,6 @@ Acceptance criteria:
 - [ ] Write tests for `PracticeSessionController` covering multi-row sequencing and edge cases (clears, repeats).
 - [ ] Add snapshot/UI tests validating that non-active rows remain dormant until activated.
 - [ ] Automate on CI (if available); otherwise provide scripts/instructions.
-
-### Milestone 7 — Documentation & Governance
-
-**Goal:** Keep architecture healthy post-refactor.
-
-- [ ] Expand this document with finalized architecture diagrams and conventions.
-- [ ] Create a contributor guideline outlining folder structure, MVVM expectations, DI pattern, testing requirements.
-- [ ] Add PR checklist items (e.g., “Did you add/update tests?”, “Does the view rely solely on view model state?”).
-- [ ] Schedule knowledge-sharing session or video walkthrough for the team.
-
-### Milestone 8 — Follow-up Improvements (Stretch)
-
-Potential enhancements once core refactor is stable:
-- [ ] Introduce performance monitoring around previews/validation to ensure fluid animation.
-- [ ] Evaluate adopting Combine/AsyncSequence pipelines in view models.
-- [ ] Investigate modularizing the project (Swift packages) for clearer boundaries.
-- [ ] Add telemetry/log aggregation for production diagnostics.
-
----
 
 ## Tracking & Hand-off Notes
 - Keep this checklist updated as milestones progress. Mark completed items with `[x]`.

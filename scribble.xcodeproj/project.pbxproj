@@ -21,13 +21,31 @@
 			remoteGlobalIDString = BD1CDADB2EA00BD60052EAF5;
 			remoteInfo = scribble;
 		};
+		BD6A100C2F3B000100000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = BD1CDAD42EA00BD60052EAF5 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = BD1CDADB2EA00BD60052EAF5;
+			remoteInfo = scribble;
+		};
+		BD6A200C2F3B000100000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = BD1CDAD42EA00BD60052EAF5 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = BD1CDADB2EA00BD60052EAF5;
+			remoteInfo = scribble;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		BD1CDADC2EA00BD60052EAF5 /* scribble.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = scribble.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		BD4F01062EA030000052EAF5 /* scribbleTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = scribbleTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		BD4F01062EA030000052EAF5 /* PracticeViewModelsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PracticeViewModelsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		BD4F010C2EA030000052EAF5 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		BD4F01222EA030000052EAF5 /* scribble/AppAssets */ = {isa = PBXFileReference; lastKnownFileType = folder; path = scribble/AppAssets; sourceTree = "<group>"; };
+		BD6A10012F3B000100000001 /* PracticeModelsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PracticeModelsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		BD6A10022F3B000100000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		BD6A20012F3B000100000001 /* PracticeCoordinatorsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PracticeCoordinatorsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		BD6A20022F3B000100000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		BD4F02022EA030000052EAF5 /* PracticeSessionControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PracticeSessionControllerTests.swift; sourceTree = "<group>"; };
 		BD4F02032EA030000052EAF5 /* CheckpointValidatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckpointValidatorTests.swift; sourceTree = "<group>"; };
 		BD4F02042EA030000052EAF5 /* PracticeRowViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PracticeRowViewModelTests.swift; sourceTree = "<group>"; };
@@ -56,6 +74,20 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		BD6A10042F3B000100000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BD6A20042F3B000100000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -65,7 +97,9 @@
 				BD1CDADE2EA00BD60052EAF5 /* scribble */,
 				BD1CDADD2EA00BD60052EAF5 /* Products */,
 				BD4F01222EA030000052EAF5 /* scribble/AppAssets */,
-				BD4F01092EA030000052EAF5 /* scribbleTests */,
+				BD4F01092EA030000052EAF5 /* PracticeViewModelsTests */,
+				BD6A10092F3B000100000001 /* PracticeModelsTests */,
+				BD6A20092F3B000100000001 /* PracticeCoordinatorsTests */,
 			);
 			sourceTree = "<group>";
 		};
@@ -73,20 +107,38 @@
 			isa = PBXGroup;
 			children = (
 				BD1CDADC2EA00BD60052EAF5 /* scribble.app */,
-				BD4F01062EA030000052EAF5 /* scribbleTests.xctest */,
+				BD4F01062EA030000052EAF5 /* PracticeViewModelsTests.xctest */,
+				BD6A10012F3B000100000001 /* PracticeModelsTests.xctest */,
+				BD6A20012F3B000100000001 /* PracticeCoordinatorsTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
-		BD4F01092EA030000052EAF5 /* scribbleTests */ = {
+		BD4F01092EA030000052EAF5 /* PracticeViewModelsTests */ = {
 			isa = PBXGroup;
 			children = (
-				BD4F02032EA030000052EAF5 /* CheckpointValidatorTests.swift */,
 				BD4F010C2EA030000052EAF5 /* Info.plist */,
 				BD4F02042EA030000052EAF5 /* PracticeRowViewModelTests.swift */,
+			);
+			path = PracticeViewModelsTests;
+			sourceTree = "<group>";
+		};
+		BD6A10092F3B000100000001 /* PracticeModelsTests */ = {
+			isa = PBXGroup;
+			children = (
+				BD6A10022F3B000100000001 /* Info.plist */,
+				BD4F02032EA030000052EAF5 /* CheckpointValidatorTests.swift */,
+			);
+			path = PracticeModelsTests;
+			sourceTree = "<group>";
+		};
+		BD6A20092F3B000100000001 /* PracticeCoordinatorsTests */ = {
+			isa = PBXGroup;
+			children = (
+				BD6A20022F3B000100000001 /* Info.plist */,
 				BD4F02022EA030000052EAF5 /* PracticeSessionControllerTests.swift */,
 			);
-			path = scribbleTests;
+			path = PracticeCoordinatorsTests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -114,9 +166,9 @@
 			productReference = BD1CDADC2EA00BD60052EAF5 /* scribble.app */;
 			productType = "com.apple.product-type.application";
 		};
-		BD4F01002EA030000052EAF5 /* scribbleTests */ = {
+		BD4F01002EA030000052EAF5 /* PracticeViewModelsTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = BD4F01032EA030000052EAF5 /* Build configuration list for PBXNativeTarget "scribbleTests" */;
+			buildConfigurationList = BD4F01032EA030000052EAF5 /* Build configuration list for PBXNativeTarget "PracticeViewModelsTests" */;
 			buildPhases = (
 				BD4F01012EA030000052EAF5 /* Sources */,
 				BD4F01022EA030000052EAF5 /* Frameworks */,
@@ -127,11 +179,55 @@
 				BD4F010A2EA030000052EAF5 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				BD4F01092EA030000052EAF5 /* scribbleTests */,
+				BD4F01092EA030000052EAF5 /* PracticeViewModelsTests */,
 			);
-			name = scribbleTests;
-			productName = scribbleTests;
-			productReference = BD4F01062EA030000052EAF5 /* scribbleTests.xctest */;
+			name = PracticeViewModelsTests;
+			productName = PracticeViewModelsTests;
+			productReference = BD4F01062EA030000052EAF5 /* PracticeViewModelsTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		BD6A10052F3B000100000001 /* PracticeModelsTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BD6A10062F3B000100000001 /* Build configuration list for PBXNativeTarget "PracticeModelsTests" */;
+			buildPhases = (
+				BD6A10032F3B000100000001 /* Sources */,
+				BD6A10042F3B000100000001 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				BD6A100B2F3B000100000001 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				BD6A10092F3B000100000001 /* PracticeModelsTests */,
+			);
+			name = PracticeModelsTests;
+			packageProductDependencies = (
+			);
+			productName = PracticeModelsTests;
+			productReference = BD6A10012F3B000100000001 /* PracticeModelsTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		BD6A20052F3B000100000001 /* PracticeCoordinatorsTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BD6A20062F3B000100000001 /* Build configuration list for PBXNativeTarget "PracticeCoordinatorsTests" */;
+			buildPhases = (
+				BD6A20032F3B000100000001 /* Sources */,
+				BD6A20042F3B000100000001 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				BD6A200B2F3B000100000001 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				BD6A20092F3B000100000001 /* PracticeCoordinatorsTests */,
+			);
+			name = PracticeCoordinatorsTests;
+			packageProductDependencies = (
+			);
+			productName = PracticeCoordinatorsTests;
+			productReference = BD6A20012F3B000100000001 /* PracticeCoordinatorsTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
@@ -167,7 +263,9 @@
 			projectRoot = "";
 			targets = (
 				BD1CDADB2EA00BD60052EAF5 /* scribble */,
-				BD4F01002EA030000052EAF5 /* scribbleTests */,
+				BD4F01002EA030000052EAF5 /* PracticeViewModelsTests */,
+				BD6A10052F3B000100000001 /* PracticeModelsTests */,
+				BD6A20052F3B000100000001 /* PracticeCoordinatorsTests */,
 			);
 		};
 /* End PBXProject section */
@@ -195,9 +293,23 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				BD4F02062EA030000052EAF5 /* CheckpointValidatorTests.swift in Sources */,
-				BD4F02052EA030000052EAF5 /* PracticeSessionControllerTests.swift in Sources */,
 				BD4F02072EA030000052EAF5 /* PracticeRowViewModelTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BD6A10032F3B000100000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BD4F02062EA030000052EAF5 /* CheckpointValidatorTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BD6A20032F3B000100000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BD4F02052EA030000052EAF5 /* PracticeSessionControllerTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -208,6 +320,16 @@
 			isa = PBXTargetDependency;
 			target = BD1CDADB2EA00BD60052EAF5 /* scribble */;
 			targetProxy = BD4F010B2EA030000052EAF5 /* PBXContainerItemProxy */;
+		};
+		BD6A100B2F3B000100000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = BD1CDADB2EA00BD60052EAF5 /* scribble */;
+			targetProxy = BD6A100C2F3B000100000001 /* PBXContainerItemProxy */;
+		};
+		BD6A200B2F3B000100000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = BD1CDADB2EA00BD60052EAF5 /* scribble */;
+			targetProxy = BD6A200C2F3B000100000001 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -398,9 +520,9 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 54Q9XU57JS;
-				INFOPLIST_FILE = scribbleTests/Info.plist;
+				INFOPLIST_FILE = PracticeViewModelsTests/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.3;
-				PRODUCT_BUNDLE_IDENTIFIER = com.mitchellwhite.scribbleTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mitchellwhite.PracticeViewModelsTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -417,9 +539,81 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 54Q9XU57JS;
-				INFOPLIST_FILE = scribbleTests/Info.plist;
+				INFOPLIST_FILE = PracticeViewModelsTests/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.3;
-				PRODUCT_BUNDLE_IDENTIFIER = com.mitchellwhite.scribbleTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mitchellwhite.PracticeViewModelsTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 2;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/scribble.app/scribble";
+			};
+			name = Release;
+		};
+		BD6A10072F3B000100000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 54Q9XU57JS;
+				INFOPLIST_FILE = PracticeModelsTests/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.3;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mitchellwhite.PracticeModelsTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 2;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/scribble.app/scribble";
+			};
+			name = Debug;
+		};
+		BD6A10082F3B000100000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 54Q9XU57JS;
+				INFOPLIST_FILE = PracticeModelsTests/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.3;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mitchellwhite.PracticeModelsTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 2;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/scribble.app/scribble";
+			};
+			name = Release;
+		};
+		BD6A20072F3B000100000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 54Q9XU57JS;
+				INFOPLIST_FILE = PracticeCoordinatorsTests/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.3;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mitchellwhite.PracticeCoordinatorsTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 2;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/scribble.app/scribble";
+			};
+			name = Debug;
+		};
+		BD6A20082F3B000100000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 54Q9XU57JS;
+				INFOPLIST_FILE = PracticeCoordinatorsTests/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.3;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mitchellwhite.PracticeCoordinatorsTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = 2;
@@ -448,11 +642,29 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		BD4F01032EA030000052EAF5 /* Build configuration list for PBXNativeTarget "scribbleTests" */ = {
+		BD4F01032EA030000052EAF5 /* Build configuration list for PBXNativeTarget "PracticeViewModelsTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				BD4F01042EA030000052EAF5 /* Debug */,
 				BD4F01052EA030000052EAF5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		BD6A10062F3B000100000001 /* Build configuration list for PBXNativeTarget "PracticeModelsTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BD6A10072F3B000100000001 /* Debug */,
+				BD6A10082F3B000100000001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		BD6A20062F3B000100000001 /* Build configuration list for PBXNativeTarget "PracticeCoordinatorsTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BD6A20072F3B000100000001 /* Debug */,
+				BD6A20082F3B000100000001 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

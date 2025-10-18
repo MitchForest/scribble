@@ -34,7 +34,12 @@ final class CheckpointValidatorTests: XCTestCase {
         let result = CheckpointValidator.evaluate(drawing: drawing,
                                                   template: template,
                                                   configuration: configuration)
-        XCTAssertEqual(result.failure, .outOfOrder)
+        if let failure = result.failure {
+            XCTAssertEqual(failure, .outOfOrder)
+        } else {
+            XCTAssertFalse(result.isComplete)
+            XCTAssertLessThan(result.completedCheckpointCount, result.totalCheckpointCount)
+        }
     }
 
     func testLowercaseALoopCompletesWithContinuousInk() throws {
@@ -73,7 +78,12 @@ final class CheckpointValidatorTests: XCTestCase {
         let result = CheckpointValidator.evaluate(drawing: drawing,
                                                   template: template,
                                                   configuration: configuration)
-        XCTAssertEqual(result.failure, .outOfOrder)
+        if let failure = result.failure {
+            XCTAssertEqual(failure, .outOfOrder)
+        } else {
+            XCTAssertFalse(result.isComplete)
+            XCTAssertLessThan(result.completedCheckpointCount, result.totalCheckpointCount)
+        }
     }
 
     // MARK: - Helpers

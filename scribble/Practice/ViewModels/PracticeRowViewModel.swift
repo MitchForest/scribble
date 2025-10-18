@@ -56,6 +56,7 @@ final class PracticeRowViewModel: ObservableObject {
 
     let repetitionIndex: Int
     private(set) var letterIndex: Int
+    private let haptics: HapticsProviding
 
     private let onLetterComplete: () -> Void
     private let onWarning: () -> Void
@@ -69,13 +70,15 @@ final class PracticeRowViewModel: ObservableObject {
          onLetterComplete: @escaping () -> Void,
          onWarning: @escaping () -> Void,
          onSuccessFeedback: @escaping () -> Void,
-         onRetryFeedback: @escaping () -> Void) {
+         onRetryFeedback: @escaping () -> Void,
+         haptics: HapticsProviding = SystemHapticsProvider.shared) {
         self.repetitionIndex = repetitionIndex
         self.letterIndex = initialLetterIndex
         self.onLetterComplete = onLetterComplete
         self.onWarning = onWarning
         self.onSuccessFeedback = onSuccessFeedback
         self.onRetryFeedback = onRetryFeedback
+        self.haptics = haptics
     }
 
     func updateEnvironment(_ environment: Environment) {
@@ -404,9 +407,9 @@ final class PracticeRowViewModel: ObservableObject {
         case .none:
             break
         case .soft:
-            HapticsManager.shared.notice()
+            haptics.notice(intensity: 0.75)
         case .warning:
-            HapticsManager.shared.warning()
+            haptics.warning()
         }
     }
 
@@ -416,7 +419,7 @@ final class PracticeRowViewModel: ObservableObject {
         case .none:
             break
         case .soft, .warning:
-            HapticsManager.shared.notice()
+            haptics.notice(intensity: 0.75)
         }
     }
 
@@ -426,7 +429,7 @@ final class PracticeRowViewModel: ObservableObject {
         case .none:
             break
         case .soft, .warning:
-            HapticsManager.shared.success()
+            haptics.success()
         }
     }
 }

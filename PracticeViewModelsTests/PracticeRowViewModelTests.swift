@@ -59,7 +59,8 @@ final class PracticeRowViewModelTests: XCTestCase {
             onLetterComplete: { },
             onWarning: { },
             onSuccessFeedback: { },
-            onRetryFeedback: { }
+            onRetryFeedback: { },
+            haptics: StubHaptics()
         )
     }
 
@@ -111,5 +112,11 @@ final class PracticeRowViewModelTests: XCTestCase {
             template: template,
             support: .supported
         )
+    }
+
+    private final class StubHaptics: HapticsProviding {
+        func warning() {}
+        func success() {}
+        func notice(intensity: CGFloat) {}
     }
 }
