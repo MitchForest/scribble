@@ -1,26 +1,6 @@
 import SwiftUI
 import PencilKit
 
-struct LetterCelebrationOverlay: View {
-    var body: some View {
-        ZStack {
-            Color.black.opacity(0.08)
-            VStack(spacing: 12) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 60, weight: .bold))
-                    .foregroundStyle(Color(red: 0.36, green: 0.66, blue: 0.46))
-                    .shadow(color: Color.black.opacity(0.2), radius: 10, x: 0, y: 6)
-                Text("Letter Complete")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 8)
-                    .background(Color.black.opacity(0.35), in: Capsule())
-            }
-        }
-    }
-}
-
 struct PreviewStrokeOverlay: View {
     let segment: WordLayout.Segment
     let progress: [CGFloat]

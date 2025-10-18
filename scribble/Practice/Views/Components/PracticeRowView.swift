@@ -82,12 +82,6 @@ struct PracticeRowView: View {
                 .frame(width: canvasWidth, height: rowHeight)
             }
 
-            if state.letterCelebrationVisible {
-                LetterCelebrationOverlay()
-                    .frame(width: canvasWidth, height: rowHeight)
-                    .allowsHitTesting(false)
-                    .transition(.scale.combined(with: .opacity))
-            }
         }
         .frame(width: canvasWidth, height: rowHeight, alignment: .topLeading)
     }

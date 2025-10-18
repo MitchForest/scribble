@@ -31,8 +31,6 @@ final class PracticeRowViewModel: ObservableObject {
         var didCompleteCurrentLetter: Bool = false
         var previewStrokeProgress: [CGFloat] = []
         var previewAnimationGeneration: Int = 0
-        var letterCelebrationVisible: Bool = false
-        var letterCelebrationToken: Int = 0
         var activeStrokeSamples: [CanvasStrokeSample] = []
         var lastIgnoreReason: String?
         var loggedEmptyReset: Bool = false
@@ -115,7 +113,6 @@ final class PracticeRowViewModel: ObservableObject {
         state.didCompleteCurrentLetter = false
         state.previewStrokeProgress = []
         state.previewAnimationGeneration &+= 1
-        state.letterCelebrationVisible = false
         state.activeStrokeSamples = []
         state.lastIgnoreReason = nil
         state.loggedEmptyReset = false
@@ -318,21 +315,7 @@ final class PracticeRowViewModel: ObservableObject {
     private func completeRow() {
         state.frozenDrawing = state.frozenDrawing.appending(state.drawing)
         reset(to: .frozen, clearDrawing: false)
-        state.letterCelebrationToken &+= 1
-        let celebrationToken = state.letterCelebrationToken
-
-        withAnimation(.spring(response: 0.45, dampingFraction: 0.75)) {
-            state.letterCelebrationVisible = true
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [weak self] in
-            guard let self else { return }
-            guard celebrationToken == self.state.letterCelebrationToken else { return }
-            withAnimation(.easeInOut(duration: 0.3)) {
-                self.state.letterCelebrationVisible = false
-            }
-        }
-
+        triggerSuccessHaptic()
         onLetterComplete()
     }
 

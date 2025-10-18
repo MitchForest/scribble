@@ -79,26 +79,78 @@ final class PracticeSessionController {
         guard state.repetitions.indices.contains(repetition) else { return }
         guard state.repetitions[repetition].letters.indices.contains(letterIndex) else { return }
         var newState = state
-        let repetitionCount = newState.repetitions.count
-        let activeLetter = newState.activeLetterGlobalIndex
 
         newState.repetitions[repetition].markLetterCompleted(at: letterIndex)
 
-        if repetition + 1 < repetitionCount {
-            let nextRepetition = repetition + 1
-            newState.activeRepetitionIndex = nextRepetition
-            newState.repetitions[nextRepetition].updateActiveLetter(to: activeLetter)
+        enum Step {
+            case sameRepetition(nextLetter: Int)
+            case nextRepetition(index: Int, letter: Int)
+            case nextLetter(letter: Int)
+            case sessionComplete
+        }
+
+        let step: Step
+
+        if let nextLetter = newState.repetitions[repetition].nextIncompleteLetterIndex(after: letterIndex) {
+            step = .sameRepetition(nextLetter: nextLetter)
+        } else if let nextRepetition = nextRepetitionNeedingWork(after: repetition, in: newState.repetitions),
+                  let targetLetter = newState.repetitions[nextRepetition].firstIncompleteLetterIndex() {
+            step = .nextRepetition(index: nextRepetition, letter: targetLetter)
+        } else if let nextLetter = nextPractiseableLetterIndex(after: letterIndex, in: newState.timeline.items) {
+            step = .nextLetter(letter: nextLetter)
         } else {
-            let nextLetter = activeLetter + 1
-            newState.activeLetterGlobalIndex = min(nextLetter, max(newState.totalLetters - 1, 0))
+            step = .sessionComplete
+        }
+
+        switch step {
+        case let .sameRepetition(nextLetter):
+            newState.activeRepetitionIndex = repetition
+            newState.activeLetterGlobalIndex = nextLetter
+            newState.repetitions[repetition].updateActiveLetter(to: nextLetter)
+        case let .nextRepetition(index, letter):
+            newState.activeRepetitionIndex = index
+            newState.activeLetterGlobalIndex = letter
+            newState.repetitions[index].updateActiveLetter(to: letter)
+        case let .nextLetter(letter):
             newState.activeRepetitionIndex = 0
-            for index in newState.repetitions.indices {
-                newState.repetitions[index].updateActiveLetter(to: newState.activeLetterGlobalIndex)
+            newState.activeLetterGlobalIndex = letter
+            for idx in newState.repetitions.indices {
+                newState.repetitions[idx].updateActiveLetter(to: letter)
             }
+        case .sessionComplete:
+            newState.activeRepetitionIndex = repetition
+            newState.activeLetterGlobalIndex = letterIndex
         }
 
         state = newState
         stateSubject.send(newState)
+    }
+
+    private func nextRepetitionNeedingWork(after index: Int,
+                                            in repetitions: [RepetitionState]) -> Int? {
+        guard !repetitions.isEmpty else { return nil }
+        let start = min(max(index + 1, 0), repetitions.count)
+        if start < repetitions.count {
+            for candidate in start..<repetitions.count {
+                if repetitions[candidate].hasRemainingLetters {
+                    return candidate
+                }
+            }
+        }
+        return nil
+    }
+
+    private func nextPractiseableLetterIndex(after index: Int,
+                                             in items: [LetterTimelineItem]) -> Int? {
+        guard index < items.count else { return nil }
+        var candidate = index + 1
+        while candidate < items.count {
+            if items[candidate].isPractiseable {
+                return candidate
+            }
+            candidate += 1
+        }
+        return nil
     }
 
     private func replayLetter(at index: Int) {

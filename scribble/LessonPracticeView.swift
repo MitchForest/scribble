@@ -17,6 +17,7 @@ struct LessonPracticeView: View {
     @State private var boardKey = UUID()
     @State private var boardDirection: BoardTransitionDirection = .forward
     @State private var clearToken = 0
+    @State private var lessonCompletionVisible = false
 
     private let lessons: [PracticeLesson]
 
@@ -40,6 +41,14 @@ struct LessonPracticeView: View {
     private var nextLessonIndex: Int {
         guard !lessons.isEmpty else { return 0 }
         return (currentIndex + 1) % lessons.count
+    }
+
+    private var nextLessonDisplayTitle: String {
+        if lessons.indices.contains(nextLessonIndex) && lessons.count > 1 {
+            return lessons[nextLessonIndex].title
+        } else {
+            return currentLesson.title
+        }
     }
 
     private var hasMultipleLessons: Bool {
@@ -83,15 +92,43 @@ struct LessonPracticeView: View {
         }
         .toolbar(.hidden, for: .navigationBar)
         .overlay {
-            if let dialog = activeDialog {
-                DialogOverlay {
-                    dialogView(for: dialog)
-                } onDismiss: {
-                    closeDialog()
+            ZStack {
+                if lessonCompletionVisible {
+                    DialogOverlay {
+                        LessonCompletionDialog(lessonTitle: nextLessonDisplayTitle,
+                                               hasNextLesson: hasMultipleLessons,
+                                               onNext: {
+                                                   withAnimation(.easeInOut(duration: 0.25)) {
+                                                       lessonCompletionVisible = false
+                                                   }
+                                                   DispatchQueue.main.async {
+                                                       advanceToNextLesson()
+                                                   }
+                                               },
+                                               onExit: {
+                                                   withAnimation(.easeInOut(duration: 0.25)) {
+                                                       lessonCompletionVisible = false
+                                                   }
+                                                   DispatchQueue.main.async {
+                                                       dismiss()
+                                                   }
+                                               })
+                    } onDismiss: {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            lessonCompletionVisible = false
+                        }
+                    }
+                } else if let dialog = activeDialog {
+                    DialogOverlay {
+                        dialogView(for: dialog)
+                    } onDismiss: {
+                        closeDialog()
+                    }
                 }
             }
         }
         .animation(.easeInOut(duration: 0.25), value: activeDialog)
+        .animation(.easeInOut(duration: 0.25), value: lessonCompletionVisible)
     }
 
     private var header: some View {
@@ -143,7 +180,10 @@ struct LessonPracticeView: View {
                                                                    totalLetters: total)
                                 },
                                 onLessonComplete: {
-                                    advanceToNextLesson()
+                                    withAnimation(.easeInOut(duration: 0.25)) {
+                                        activeDialog = nil
+                                        lessonCompletionVisible = true
+                                    }
                                 })
             .id(boardKey)
             .transition(boardTransition)
@@ -319,4 +359,3 @@ private struct LessonNavigationDock: View {
         .accessibilityLabel(accessibilityLabel)
     }
 }
-

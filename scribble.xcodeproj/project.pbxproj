@@ -42,13 +42,13 @@
 		BD4F01062EA030000052EAF5 /* PracticeViewModelsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PracticeViewModelsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		BD4F010C2EA030000052EAF5 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		BD4F01222EA030000052EAF5 /* scribble/AppAssets */ = {isa = PBXFileReference; lastKnownFileType = folder; path = scribble/AppAssets; sourceTree = "<group>"; };
+		BD4F02022EA030000052EAF5 /* PracticeSessionControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PracticeSessionControllerTests.swift; sourceTree = "<group>"; };
+		BD4F02032EA030000052EAF5 /* CheckpointValidatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckpointValidatorTests.swift; sourceTree = "<group>"; };
+		BD4F02042EA030000052EAF5 /* PracticeRowViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PracticeRowViewModelTests.swift; sourceTree = "<group>"; };
 		BD6A10012F3B000100000001 /* PracticeModelsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PracticeModelsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		BD6A10022F3B000100000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		BD6A20012F3B000100000001 /* PracticeCoordinatorsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PracticeCoordinatorsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		BD6A20022F3B000100000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		BD4F02022EA030000052EAF5 /* PracticeSessionControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PracticeSessionControllerTests.swift; sourceTree = "<group>"; };
-		BD4F02032EA030000052EAF5 /* CheckpointValidatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckpointValidatorTests.swift; sourceTree = "<group>"; };
-		BD4F02042EA030000052EAF5 /* PracticeRowViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PracticeRowViewModelTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */

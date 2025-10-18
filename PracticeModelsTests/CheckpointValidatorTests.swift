@@ -86,6 +86,66 @@ final class CheckpointValidatorTests: XCTestCase {
         }
     }
 
+    func testPartialStrokeDoesNotCompleteAllCheckpoints() throws {
+        let template = try loadTemplate(named: "m.lower", rowHeight: rowHeight)
+        let configuration = profile.validationConfiguration(rowHeight: rowHeight,
+                                                             visualStartRadius: startDotRadius,
+                                                             userInkWidth: userInkWidth)
+
+        let plan = TraceCheckpointPlan.make(template: template,
+                                            checkpointLength: configuration.checkpointLength,
+                                            spacing: configuration.spacingLength)
+
+        guard let firstPath = plan.paths.first, let firstStroke = template.strokes.first else {
+            XCTFail("Expected first stroke")
+            return
+        }
+
+        let sampleCount = max(3, firstStroke.points.count / 25)
+        let partialStroke = Array(firstStroke.points.prefix(sampleCount))
+        let drawing = makeDrawing(from: [partialStroke])
+
+        let result = CheckpointValidator.evaluate(drawing: drawing,
+                                                  template: template,
+                                                  configuration: configuration)
+
+        let completed = Set(result.checkpointStatuses.filter { $0.completed }.map { $0.globalIndex })
+        let firstStrokeIndices = Set(firstPath.checkpoints.map { $0.globalIndex })
+
+        XCTAssertFalse(firstStrokeIndices.isSubset(of: completed))
+        XCTAssertFalse(result.isComplete)
+        XCTAssertLessThan(result.completedCheckpointCount, plan.totalCheckpointCount)
+    }
+
+    func testCompletingFirstStrokeDoesNotAdvanceRemainingStrokes() throws {
+        let template = try loadTemplate(named: "m.lower", rowHeight: rowHeight)
+        let configuration = profile.validationConfiguration(rowHeight: rowHeight,
+                                                             visualStartRadius: startDotRadius,
+                                                             userInkWidth: userInkWidth)
+
+        let plan = TraceCheckpointPlan.make(template: template,
+                                            checkpointLength: configuration.checkpointLength,
+                                            spacing: configuration.spacingLength)
+
+        guard let firstPath = plan.paths.first, let firstStroke = template.strokes.first else {
+            XCTFail("Expected first stroke")
+            return
+        }
+
+        let drawing = makeDrawing(from: [firstStroke.points])
+
+        let result = CheckpointValidator.evaluate(drawing: drawing,
+                                                  template: template,
+                                                  configuration: configuration)
+
+        let completed = Set(result.checkpointStatuses.filter { $0.completed }.map { $0.globalIndex })
+        let firstStrokeIndices = Set(firstPath.checkpoints.map { $0.globalIndex })
+
+        XCTAssertTrue(firstStrokeIndices.isSubset(of: completed))
+        XCTAssertLessThan(result.completedCheckpointCount, plan.totalCheckpointCount)
+        XCTAssertEqual(result.activeCheckpointIndex, firstStrokeIndices.count)
+    }
+
     // MARK: - Helpers
 
     private func loadTemplate(named filename: String,

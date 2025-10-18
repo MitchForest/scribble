@@ -175,28 +175,28 @@ struct PracticeBoardView: View {
 
         onLetterAward(letter)
         sessionViewModel.handle(event: .letterCompleted(repetition: repetition, letterIndex: activeIndex))
+        DispatchQueue.main.async {
+            let updatedState = sessionViewModel.sessionState
+            let repetitionChanged = updatedState.activeRepetitionIndex != previousState.activeRepetitionIndex
+            let letterChanged = updatedState.activeLetterGlobalIndex != previousState.activeLetterGlobalIndex
 
-        let updatedState = sessionViewModel.sessionState
-        let repetitionChanged = updatedState.activeRepetitionIndex != previousState.activeRepetitionIndex
-        let letterChanged = updatedState.activeLetterGlobalIndex != previousState.activeLetterGlobalIndex
+            if repetitionChanged {
+                resetRows(replayLetter: false,
+                          delayed: false,
+                          clearCompletedRows: !letterChanged)
+            }
 
+            if letterChanged {
+                resetRows(replayLetter: false,
+                          delayed: false,
+                          clearCompletedRows: true)
+            }
 
-        if repetitionChanged {
-            resetRows(replayLetter: true,
-                      delayed: false,
-                      clearCompletedRows: !letterChanged)
-        }
+            updateProgress(using: updatedState)
 
-        if letterChanged {
-            resetRows(replayLetter: false,
-                      delayed: false,
-                      clearCompletedRows: true)
-        }
-
-        updateProgress(using: updatedState)
-
-        if isSessionComplete(updatedState) {
-            triggerLessonCompletion()
+            if isSessionComplete(updatedState) {
+                triggerLessonCompletion()
+            }
         }
     }
 
@@ -234,19 +234,21 @@ struct PracticeBoardView: View {
         pendingResetWorkItem?.cancel()
         feedback = nil
 
-        let state = sessionViewModel.sessionState
-        let letterIndex = state.activeLetterGlobalIndex
-        let environment = PracticeRowViewModel.Environment(segment: layout.segments[safe: letterIndex],
-                                                           metrics: metrics,
-                                                           difficulty: settings.difficulty,
-                                                           hapticsEnabled: settings.hapticsEnabled)
-
         let performReset: () -> Void = {
+            var targetLetterIndex = sessionViewModel.sessionState.activeLetterGlobalIndex
             if replayLetter,
-               let segment = layout.segments[safe: letterIndex],
+               let segment = layout.segments[safe: targetLetterIndex],
                segment.isPractiseable {
-                sessionViewModel.handle(event: .replay(letterIndex: letterIndex))
+                sessionViewModel.handle(event: .replay(letterIndex: targetLetterIndex))
+                targetLetterIndex = sessionViewModel.sessionState.activeLetterGlobalIndex
             }
+
+            let state = sessionViewModel.sessionState
+            let letterIndex = state.activeLetterGlobalIndex
+            let environment = PracticeRowViewModel.Environment(segment: layout.segments[safe: letterIndex],
+                                                               metrics: metrics,
+                                                               difficulty: settings.difficulty,
+                                                               hapticsEnabled: settings.hapticsEnabled)
 
             for (index, row) in rowViewModels.enumerated() {
                 row.updateEnvironment(environment)
@@ -269,7 +271,7 @@ struct PracticeBoardView: View {
             pendingResetWorkItem = workItem
             DispatchQueue.main.asyncAfter(deadline: .now() + lessonBoardTransitionDuration, execute: workItem)
         } else {
-            performReset()
+            DispatchQueue.main.async(execute: performReset)
         }
     }
 

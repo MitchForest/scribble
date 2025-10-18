@@ -45,6 +45,39 @@ struct RepetitionState {
         rows[index].didCompleteLetter = true
         rows[index].phase = .frozen
     }
+
+    func nextIncompleteLetterIndex(after index: Int) -> Int? {
+        guard letters.indices.contains(index) else { return nil }
+        guard index + 1 < letters.count else { return nil }
+        for candidate in (index + 1)..<letters.count {
+            guard letters[candidate].isPractiseable else { continue }
+            guard rows.indices.contains(candidate) else { continue }
+            if rows[candidate].didCompleteLetter == false {
+                return candidate
+            }
+        }
+        return nil
+    }
+
+    func firstIncompleteLetterIndex() -> Int? {
+        for candidate in letters.indices {
+            guard letters[candidate].isPractiseable else { continue }
+            guard rows.indices.contains(candidate) else { continue }
+            if rows[candidate].didCompleteLetter == false {
+                return candidate
+            }
+        }
+        return nil
+    }
+
+    func isLetterCompleted(_ index: Int) -> Bool {
+        guard rows.indices.contains(index) else { return true }
+        return rows[index].didCompleteLetter
+    }
+
+    var hasRemainingLetters: Bool {
+        firstIncompleteLetterIndex() != nil
+    }
 }
 
 /// Represents the writing state for an individual row/letter combination used by the session controller.

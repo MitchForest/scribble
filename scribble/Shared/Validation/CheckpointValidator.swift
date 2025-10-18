@@ -96,14 +96,32 @@ struct CheckpointValidator {
                 var pointerState = checkpointStates[nextCheckpointIndex]
 
                 if projection.distance <= configuration.corridorRadius {
-                    let endProgress = pointerDescriptor.startProgress + pointerDescriptor.length
-                    let startTolerance = max(pointerDescriptor.length * 0.4, configuration.studentLineWidth * 1.2)
-                    let endTolerance = max(pointerDescriptor.length * 0.3, configuration.studentLineWidth)
+                    let pathLength = max(path.totalLength, .ulpOfOne)
+                    let normalizedSpan = max(pointerDescriptor.endProgress - pointerDescriptor.startProgress, 0)
+                    let normalizedStartToleranceRaw = max(pointerDescriptor.length * 0.4,
+                                                          configuration.studentLineWidth * 1.2) / pathLength
+                    let normalizedEndToleranceRaw = max(pointerDescriptor.length * 0.3,
+                                                        configuration.studentLineWidth) / pathLength
 
-                    if projection.progress >= pointerDescriptor.startProgress - startTolerance {
+                    let startUpperBound = min(max(normalizedSpan * 0.45, 0.005), 0.35)
+                    let endUpperBound = min(max(normalizedSpan * 0.35, 0.005), 0.3)
+
+                    let normalizedStartTolerance = clamp(normalizedStartToleranceRaw,
+                                                         lower: 0.005,
+                                                         upper: startUpperBound)
+                    let normalizedEndTolerance = clamp(normalizedEndToleranceRaw,
+                                                       lower: 0.005,
+                                                       upper: endUpperBound)
+
+                    let startGate = max(pointerDescriptor.startProgress - normalizedStartTolerance, 0)
+
+                    if projection.progress >= startGate {
                         pointerState.hasContact = true
-                        pointerState.maxProgress = max(pointerState.maxProgress, projection.progress)
-                        if projection.progress <= pointerDescriptor.startProgress + startTolerance {
+                        let clampedProgress = clamp(projection.progress, lower: 0, upper: 1)
+                        pointerState.maxProgress = max(pointerState.maxProgress, clampedProgress)
+
+                        let startCapture = min(pointerDescriptor.startProgress + normalizedStartTolerance, 1)
+                        if clampedProgress <= startCapture {
                             pointerState.touchedStart = true
                         }
 
@@ -111,7 +129,14 @@ struct CheckpointValidator {
                             pointerState.touchedStart = true
                         }
 
-                        if pointerState.touchedStart && pointerState.maxProgress >= endProgress - endTolerance {
+                        let minimumAdvance = clamp(normalizedSpan * 0.6, lower: 0, upper: normalizedSpan)
+                        let completionCandidate = pointerDescriptor.endProgress - normalizedEndTolerance
+                        let completionMinimum = pointerDescriptor.startProgress + minimumAdvance
+                        let completionThreshold = max(pointerDescriptor.startProgress,
+                                                       min(pointerDescriptor.endProgress,
+                                                           max(completionCandidate, completionMinimum)))
+
+                        if pointerState.touchedStart && pointerState.maxProgress >= completionThreshold {
                             pointerState.completed = true
                             checkpointStates[nextCheckpointIndex] = pointerState
                             nextCheckpointIndex += 1
