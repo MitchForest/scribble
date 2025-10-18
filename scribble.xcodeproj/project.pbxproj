@@ -8,6 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		BD4F01232EA030000052EAF5 /* scribble/AppAssets in Resources */ = {isa = PBXBuildFile; fileRef = BD4F01222EA030000052EAF5 /* scribble/AppAssets */; };
+		BD4F02052EA030000052EAF5 /* PracticeSessionControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD4F02022EA030000052EAF5 /* PracticeSessionControllerTests.swift */; };
+		BD4F02062EA030000052EAF5 /* CheckpointValidatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD4F02032EA030000052EAF5 /* CheckpointValidatorTests.swift */; };
+		BD4F02072EA030000052EAF5 /* PracticeRowViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD4F02042EA030000052EAF5 /* PracticeRowViewModelTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -25,6 +28,9 @@
 		BD4F01062EA030000052EAF5 /* scribbleTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = scribbleTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		BD4F010C2EA030000052EAF5 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		BD4F01222EA030000052EAF5 /* scribble/AppAssets */ = {isa = PBXFileReference; lastKnownFileType = folder; path = scribble/AppAssets; sourceTree = "<group>"; };
+		BD4F02022EA030000052EAF5 /* PracticeSessionControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PracticeSessionControllerTests.swift; sourceTree = "<group>"; };
+		BD4F02032EA030000052EAF5 /* CheckpointValidatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckpointValidatorTests.swift; sourceTree = "<group>"; };
+		BD4F02042EA030000052EAF5 /* PracticeRowViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PracticeRowViewModelTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -75,7 +81,10 @@
 		BD4F01092EA030000052EAF5 /* scribbleTests */ = {
 			isa = PBXGroup;
 			children = (
+				BD4F02032EA030000052EAF5 /* CheckpointValidatorTests.swift */,
 				BD4F010C2EA030000052EAF5 /* Info.plist */,
+				BD4F02042EA030000052EAF5 /* PracticeRowViewModelTests.swift */,
+				BD4F02022EA030000052EAF5 /* PracticeSessionControllerTests.swift */,
 			);
 			path = scribbleTests;
 			sourceTree = "<group>";
@@ -116,6 +125,9 @@
 			);
 			dependencies = (
 				BD4F010A2EA030000052EAF5 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				BD4F01092EA030000052EAF5 /* scribbleTests */,
 			);
 			name = scribbleTests;
 			productName = scribbleTests;
@@ -183,6 +195,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BD4F02062EA030000052EAF5 /* CheckpointValidatorTests.swift in Sources */,
+				BD4F02052EA030000052EAF5 /* PracticeSessionControllerTests.swift in Sources */,
+				BD4F02072EA030000052EAF5 /* PracticeRowViewModelTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

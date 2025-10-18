@@ -1,8 +1,4 @@
 import Foundation
-import PencilKit
-
-/// Represents captured live stroke samples for diagnostics and incremental validation.
-typealias CanvasStrokeSamples = [CanvasStrokeSample]
 
 /// Captures state for a single practice repetition (row) across the lesson timeline.
 struct RepetitionState {
@@ -51,7 +47,7 @@ struct RepetitionState {
     }
 }
 
-/// Represents the writing state for an individual row/letter combination.
+/// Represents the writing state for an individual row/letter combination used by the session controller.
 struct RowState {
     enum Phase {
         case previewing
@@ -60,54 +56,10 @@ struct RowState {
     }
 
     var phase: Phase
-    var drawing: PKDrawing
-    var frozenDrawing: PKDrawing
-    var warningMessage: String?
-    var currentStrokeIndex: Int
-    var lastWarningTime: Date?
-    var completedCheckpointCount: Int
-    var completedStrokeCount: Int
     var didCompleteLetter: Bool
-    var previewProgress: [CGFloat]
-    var previewGeneration: Int
-    var celebrationVisible: Bool
-    var celebrationToken: Int
-    var activeStrokeSamples: CanvasStrokeSamples
-    var lastIgnoreReason: String?
 
-    init(phase: Phase,
-         drawing: PKDrawing = PKDrawing(),
-         frozenDrawing: PKDrawing = PKDrawing(),
-         warningMessage: String? = nil,
-         currentStrokeIndex: Int = 0,
-         lastWarningTime: Date? = nil,
-         completedCheckpointCount: Int = 0,
-         completedStrokeCount: Int = 0,
-         didCompleteLetter: Bool = false,
-         previewProgress: [CGFloat] = [],
-         previewGeneration: Int = 0,
-         celebrationVisible: Bool = false,
-         celebrationToken: Int = 0,
-         activeStrokeSamples: CanvasStrokeSamples = [],
-         lastIgnoreReason: String? = nil) {
+    init(phase: Phase, didCompleteLetter: Bool = false) {
         self.phase = phase
-        self.drawing = drawing
-        self.frozenDrawing = frozenDrawing
-        self.warningMessage = warningMessage
-        self.currentStrokeIndex = currentStrokeIndex
-        self.lastWarningTime = lastWarningTime
-        self.completedCheckpointCount = completedCheckpointCount
-        self.completedStrokeCount = completedStrokeCount
         self.didCompleteLetter = didCompleteLetter
-        self.previewProgress = previewProgress
-        self.previewGeneration = previewGeneration
-        self.celebrationVisible = celebrationVisible
-        self.celebrationToken = celebrationToken
-        self.activeStrokeSamples = activeStrokeSamples
-        self.lastIgnoreReason = lastIgnoreReason
     }
-
-    var isWriting: Bool { phase == .writing }
-    var isPreviewing: Bool { phase == .previewing }
-    var isFrozen: Bool { phase == .frozen }
 }

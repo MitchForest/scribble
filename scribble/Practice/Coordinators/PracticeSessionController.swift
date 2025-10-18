@@ -1,6 +1,5 @@
 import Combine
 import Foundation
-import PencilKit
 
 /// Coordinates practice repetitions, row progression, and overall lesson flow.
 /// Acts as the single source of truth for per-row state so the UI can remain declarative.
@@ -22,16 +21,6 @@ final class PracticeSessionController {
         case clearAll
         case updateSettings(UserSettings)
         case updateTimeline(PracticeTimeline)
-        case rowEvent(RowEvent)
-    }
-
-    enum RowEvent {
-        case previewStarted(repetition: Int, letterIndex: Int)
-        case previewProgressed(repetition: Int, letterIndex: Int, progress: [CGFloat])
-        case previewCompleted(repetition: Int, letterIndex: Int)
-        case drawingChanged(repetition: Int, letterIndex: Int, drawing: PKDrawing)
-        case liveSamplesUpdated(repetition: Int, letterIndex: Int, samples: [CanvasStrokeSample])
-        case warningUpdated(repetition: Int, letterIndex: Int, message: String?)
     }
 
     private(set) var state: State
@@ -73,8 +62,6 @@ final class PracticeSessionController {
             updateSettings(settings)
         case let .updateTimeline(timeline):
             updateTimeline(timeline)
-        case let .rowEvent(rowEvent):
-            handleRowEvent(rowEvent)
         }
     }
 
@@ -152,48 +139,6 @@ final class PracticeSessionController {
         newState.activeLetterGlobalIndex = 0
         newState.activeRepetitionIndex = 0
         newState.repetitions = Array(repeating: RepetitionState(letters: timeline.items, activeLetterIndex: 0), count: newState.repetitions.count)
-        state = newState
-        stateSubject.send(newState)
-    }
-
-    private func handleRowEvent(_ event: RowEvent) {
-        switch event {
-        case let .previewStarted(repetition, letterIndex):
-            updateRow(repetition: repetition, letterIndex: letterIndex) { row in
-                row.phase = .previewing
-                row.previewGeneration &+= 1
-                row.previewProgress = []
-            }
-        case let .previewProgressed(repetition, letterIndex, progress):
-            updateRow(repetition: repetition, letterIndex: letterIndex) { row in
-                row.previewProgress = progress
-            }
-        case let .previewCompleted(repetition, letterIndex):
-            updateRow(repetition: repetition, letterIndex: letterIndex) { row in
-                row.phase = .writing
-                row.previewProgress = []
-            }
-        case let .drawingChanged(repetition, letterIndex, drawing):
-            updateRow(repetition: repetition, letterIndex: letterIndex) { row in
-                row.drawing = drawing
-            }
-        case let .liveSamplesUpdated(repetition, letterIndex, samples):
-            updateRow(repetition: repetition, letterIndex: letterIndex) { row in
-                row.activeStrokeSamples = samples
-            }
-        case let .warningUpdated(repetition, letterIndex, message):
-            updateRow(repetition: repetition, letterIndex: letterIndex) { row in
-                row.warningMessage = message
-                row.lastWarningTime = message == nil ? row.lastWarningTime : Date()
-            }
-        }
-    }
-
-    private func updateRow(repetition: Int, letterIndex: Int, mutate: (inout RowState) -> Void) {
-        guard state.repetitions.indices.contains(repetition) else { return }
-        guard state.repetitions[repetition].rows.indices.contains(letterIndex) else { return }
-        var newState = state
-        mutate(&newState.repetitions[repetition].rows[letterIndex])
         state = newState
         stateSubject.send(newState)
     }

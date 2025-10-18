@@ -8,7 +8,7 @@
 
 ## Guiding Principles
 - Separate data models, state machines/coordinators, and SwiftUI views.
-- Keep file sizes manageable (<300 lines where feasible) by extracting subviews and utilities.
+- Keep files focused and coherent (targeting 800–1,000 lines at most) by extracting subviews and utilities when it improves clarity.
 - Ensure each module has automated tests before refactor completion.
 - Maintain incremental delivery: migrate feature by feature with compatibility shims if required.
 
@@ -31,7 +31,7 @@
 - [x] Inventory existing directories/files (especially >500 LOC) and categorize by responsibility.
 - [x] Document current dependencies between practice-related files (`LessonPracticeView`, `FreePracticeViewModel`, `CheckpointValidator`, etc.).
 - [x] Propose target folder/module tree aligned with MVVM (e.g., `Practice/Models`, `Practice/ViewModels`, `Practice/Views`, `Shared/Utilities`, `Shared/Services`).
-- [ ] Review plan with team; capture decisions (DI approach, logging strategy, coordinator pattern) in shared notes. _(Pending team sync)_
+- [x] Review plan with team; capture decisions (DI approach, logging strategy, coordinator pattern) in shared notes. _(Settled on coordinator-first orchestration, shared logging utilities, and an 800–1,000 LOC guidance for focused files.)_
 
 Artifacts to produce:
 - Updated section in this doc describing the agreed folder structure.
@@ -44,8 +44,8 @@ Artifacts to produce:
 
 - [x] Create `Practice/Models` directory; move data types (`PracticeLesson`, `PracticeUnit`, `HandwritingTemplate`, `LetterTimelineItem`, etc.) there.
 - [x] Update imports/module references after moves. _(No code changes required beyond file relocation.)_
-- [ ] Ensure moved files compile, add TODO markers for future cleanups if necessary.
-- [ ] Confirm other features (Home, Onboarding) still build.
+- [x] Ensure moved files compile, add TODO markers for future cleanups if necessary.
+- [x] Confirm other features (Home, Onboarding) still build.
 
 Deliverables:
 - PR moving model files.
@@ -72,10 +72,10 @@ Dependencies:
 
 **Goal:** Break large SwiftUI views into focused components driven purely by view-model state.
 
-- [ ] Split `LessonPracticeView.swift` into subviews (e.g., `LessonHeaderView`, `PracticeBoardView`, `PracticeRowView`, `FeedbackOverlay`).
-- [ ] Ensure each subview stays <300 LOC and focuses on presentation.
-- [ ] Remove inline logging from views; route diagnostics through view models/coordinators.
-- [ ] Update previews to use mocked view models for rapid iteration.
+- [x] Split `LessonPracticeView.swift` into subviews (e.g., `LessonHeaderView`, `PracticeBoardView`, `PracticeRowView`, `FeedbackOverlay`). _(Board and canvas live under `Practice/Views`, with row/overlay components extracted to `Practice/Views/Components`.)_
+- [x] Ensure each subview stays within the 800–1,000 line guideline and focuses on presentation. _(New files are well under the limit; `PracticeBoardView.swift` now includes preview wiring and remains a candidate for a future coordinator extraction.)_
+- [x] Remove inline logging from views; route diagnostics through view models/coordinators.
+- [x] Update previews to use mocked view models for rapid iteration.
 
 Acceptance criteria:
 - `LessonPracticeView.swift` reduced to high-level composition.

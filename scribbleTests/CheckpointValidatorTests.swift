@@ -121,7 +121,7 @@ final class CheckpointValidatorTests: XCTestCase {
                                                 size: CGSize(width: 1, height: 1),
                                                 opacity: 1,
                                                 force: 1,
-                                                azimuth: CGVector(dx: 1, dy: 0),
+                                                azimuth: 0,
                                                 altitude: .pi / 2)
                 samples.append(strokePoint)
                 timeOffset += 0.02
